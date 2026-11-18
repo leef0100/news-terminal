@@ -62,25 +62,29 @@ export function rankPairs(pairs, term, postTs, nowTs) {
 export function createTokenMatcher({ fetchImpl = fetch, ttlMs = 15000, now = Date.now, timeoutMs = 6000, upstreamPerMinute = 240 } = {}) {
   const cache = new Map();
   const inflight = new Map();
-  // The search service allows a fixed number of calls a minute for the whole site. Many
-  // people searching many different words must not spend it all, so new words are refused
-  // (cached ones still answer) once this process has used its share for the minute.
+  // The search service allows a fixed number of calls a minute for the whole site. Words
+  // that are in the news right now always get through; everything else shares a smaller
+  // allowance, so a flood of made-up words cannot switch the feature off for real ones.
   let windowStart = 0;
   let used = 0;
-  const spend = () => {
+  let usedOther = 0;
+  const spend = (priority) => {
     const t = now();
-    if (t - windowStart >= 60000) { windowStart = t; used = 0; }
+    if (t - windowStart >= 60000) { windowStart = t; used = 0; usedOther = 0; }
+    if (!priority && usedOther >= Math.floor(upstreamPerMinute / 2)) return false;
+    if (used >= upstreamPerMinute) return false;
     used += 1;
-    return used <= upstreamPerMinute;
+    if (!priority) usedOther += 1;
+    return true;
   };
 
   // One upstream call per term per ttl, however many people ask at once.
-  async function pairsFor(term) {
+  async function pairsFor(term, priority = false) {
     const key = term.toLowerCase();
     const hit = cache.get(key);
     if (hit && now() - hit.at < ttlMs) return hit.pairs;
     if (inflight.has(key)) return inflight.get(key);
-    if (!spend()) {
+    if (!spend(priority)) {
       if (hit) return hit.pairs;
       throw new Error('Token search is busy, try again shortly');
     }
@@ -99,9 +103,9 @@ export function createTokenMatcher({ fetchImpl = fetch, ttlMs = 15000, now = Dat
 
   // Tokens for one term, deepest liquidity first. The same answer suits every reader, so it
   // can be cached by a CDN; the browser adds the "created after this post" flag itself.
-  async function search(term, limit = 8) {
+  async function search(term, limit = 8, { priority = false } = {}) {
     const t = String(term).trim();
-    return rankPairs(await pairsFor(t), t, null, now())
+    return rankPairs(await pairsFor(t, priority), t, null, now())
       .sort((a, b) => b.liquidityUsd - a.liquidityUsd)
       .slice(0, limit);
   }
@@ -111,7 +115,7 @@ export function createTokenMatcher({ fetchImpl = fetch, ttlMs = 15000, now = Dat
     const seen = new Set();
     const all = [];
     const errors = [];
-    const results = await Promise.allSettled(unique.map((t) => pairsFor(t)));
+    const results = await Promise.allSettled(unique.map((t) => pairsFor(t, true)));
     results.forEach((r, i) => {
       if (r.status === 'rejected') return errors.push(String(r.reason?.message || r.reason));
       for (const tok of rankPairs(r.value, unique[i], postTs, now())) {

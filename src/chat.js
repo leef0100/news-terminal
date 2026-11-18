@@ -4,8 +4,12 @@
 import { EventEmitter } from 'node:events';
 import { randomBytes } from 'node:crypto';
 
+// Normalises look-alike characters and removes invisible and direction-flipping ones,
+// which are otherwise used to impersonate names ("nimda" shown as "admin").
 const clean = (s, max) =>
   String(s ?? '')
+    .normalize('NFKC')
+    .replace(/[\p{Cf}\p{Co}\p{Cs}]/gu, '')
     .replace(/[\u0000-\u001f\u007f]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
@@ -21,17 +25,24 @@ export function createChat({ hasRoom, bus, now = Date.now, maxPerRoom = 200, max
     if (!msg || !msg.id || !msg.room || seen.has(msg.id)) return;
     seen.add(msg.id);
     if (seen.size > keep * 2) seen.delete(seen.values().next().value);
-    if (!rooms.has(msg.room)) {
-      if (rooms.size >= maxRooms) rooms.delete(rooms.keys().next().value);
-      rooms.set(msg.room, []);
+    // Rooms are kept in order of last activity. When there are too many, the quietest
+    // goes first, and the general room is never the one to go.
+    const list = rooms.get(msg.room) || [];
+    rooms.delete(msg.room);
+    rooms.set(msg.room, list);
+    if (rooms.size > maxRooms) {
+      for (const key of rooms.keys()) {
+        if (key !== 'general' && key !== msg.room) { rooms.delete(key); break; }
+      }
     }
-    const list = rooms.get(msg.room);
     list.push(msg);
     if (list.length > maxPerRoom) list.splice(0, list.length - maxPerRoom);
     if (announce) events.emit('msg', msg);
   }
 
-  bus.on('chat', (msg) => insert(msg, true));
+  const hydrate = async (announce) => {
+    for (const msg of await bus.history('chat', keep)) insert(msg, announce);
+  };
 
   async function post({ room, name, text, ip }) {
     const r = String(room || '');
@@ -46,9 +57,13 @@ export function createChat({ hasRoom, bus, now = Date.now, maxPerRoom = 200, max
 
   return {
     post,
-    // Load what other servers already hold, so a server that starts late shows the same history.
-    async hydrate() {
-      for (const msg of await bus.history('chat', keep)) insert(msg, false);
+    // Subscribe first, then load what other servers already hold: nothing can slip between
+    // the two. After a dropped connection the history is read again and anything missed
+    // is delivered as if it had just arrived.
+    async start() {
+      await bus.on('chat', (msg) => insert(msg, true));
+      await hydrate(false);
+      bus.onReconnect(() => hydrate(true));
     },
     list: (room) => (rooms.get(String(room)) || []).slice(),
     counts: () => Object.fromEntries([...rooms].map(([k, v]) => [k, v.length])),

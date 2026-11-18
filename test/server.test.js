@@ -43,7 +43,7 @@ test('server: pages, cache and security headers, feed, tokens, markets, radar, c
     assert.equal(page.headers.get('cache-control'), 'no-cache');
     assert.match(page.headers.get('content-security-policy'), /script-src 'self'/);
     assert.equal(page.headers.get('x-content-type-options'), 'nosniff');
-    assert.match((await fetch(url(server, '/app.js'))).headers.get('cache-control'), /max-age=300/);
+    assert.equal((await fetch(url(server, '/app.js'))).headers.get('cache-control'), 'no-cache');
 
     const feedRes = await fetch(url(server, '/api/feed'));
     assert.match(feedRes.headers.get('cache-control'), /s-maxage=1/);
@@ -62,6 +62,7 @@ test('server: pages, cache and security headers, feed, tokens, markets, radar, c
 
     assert.ok((await (await fetch(url(server, '/api/markets'))).json()).markets.length >= 6);
     assert.equal((await fetch(url(server, '/api/markets/book?coin=..%2F'))).status, 400);
+    assert.equal((await fetch(url(server, '/api/markets/candles?coin=FAKE1'))).status, 400, 'made-up markets are refused');
     assert.ok((await (await fetch(url(server, '/api/markets/candles?coin=BTC&interval=1h'))).json()).candles.length > 100);
     assert.equal((await (await fetch(url(server, '/api/radar'))).json()).coins.length, 6);
 
@@ -134,6 +135,17 @@ test('cluster: an ingest process and two web servers share the feed and chat thr
       const events = await stream;
       assert.equal(events[0]?.data.text, 'across servers');
       assert.equal((await (await fetch(url(b, '/healthz'))).json()).bus, 'redis');
+
+      // The subscriber connections are cut; a story published in that moment must still
+      // reach the web servers once they reconnect.
+      spawnSync('redis-cli', ['-p', String(port), 'CLIENT', 'KILL', 'TYPE', 'pubsub']);
+      ingest.store.add({ id: 'during-outage', sourceId: 'x', source: 'X', text: 'Published while disconnected', ts: Date.now() + 1000, cashtags: [], terms: [] });
+      let caught = false;
+      for (let i = 0; i < 40 && !caught; i++) {
+        await new Promise((r) => setTimeout(r, 150));
+        caught = (await (await fetch(url(b, '/api/feed'))).json()).items.some((x) => x.id === 'during-outage');
+      }
+      assert.ok(caught, 'the missed story was recovered after reconnecting');
     } finally {
       await webB.stop();
       b.close();
@@ -184,6 +196,25 @@ test('server: bad requests get short JSON errors, and feed sizes snap to a fixed
     const a = await fetch(url(server, '/api/feed?limit=7'));
     const b = await fetch(url(server, '/api/feed?limit=49'));
     assert.equal(a.headers.get('etag'), b.headers.get('etag'));
+  } finally {
+    await svc.stop();
+    server.close();
+  }
+});
+
+test('server: one address cannot hold every live connection; split roles need Redis', async () => {
+  await assert.rejects(() => createApp({ demo: true, role: 'web' }), /needs REDIS_URL/);
+  const svc = await createApp({ demo: true, streamsPerAddress: 2 });
+  const server = await listen(svc.app);
+  try {
+    const held = [new AbortController(), new AbortController()];
+    for (const h of held) assert.equal((await fetch(url(server, '/api/stream'), { signal: h.signal })).status, 200);
+    assert.equal((await fetch(url(server, '/api/stream'))).status, 503);
+    held[0].abort();
+    await new Promise((r) => setTimeout(r, 100));
+    const again = new AbortController();
+    assert.equal((await fetch(url(server, '/api/stream'), { signal: again.signal })).status, 200, 'the slot is freed when a connection closes');
+    again.abort(); held[1].abort();
   } finally {
     await svc.stop();
     server.close();

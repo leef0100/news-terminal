@@ -8,11 +8,21 @@ export const validCoin = (c) => typeof c === 'string' && /^[A-Za-z0-9:]{1,20}$/.
 export function createHyperliquid({ fetchImpl = fetch, now = Date.now, timeoutMs = 6000 } = {}) {
   const cache = new Map();
   const inflight = new Map();
+  const failures = new Map();
+  const FAIL_MS = 2000;
 
   async function info(body, ttlMs) {
     const key = JSON.stringify(body);
     const hit = cache.get(key);
     if (hit && now() - hit.at < ttlMs) return hit.data;
+    // After a failure the exchange is left alone for a moment. During an outage every
+    // viewer falls back to asking us, and we must not pass all of that on to a service
+    // that is already struggling. The last good answer is served meanwhile, if there is one.
+    const failed = failures.get(key);
+    if (failed && now() - failed.at < FAIL_MS) {
+      if (hit) return hit.data;
+      throw failed.error;
+    }
     // Requests that arrive while one is already on its way share its answer.
     if (inflight.has(key)) return inflight.get(key);
     const run = (async () => {
@@ -25,9 +35,17 @@ export function createHyperliquid({ fetchImpl = fetch, now = Date.now, timeoutMs
       if (!res.ok) throw new Error('Hyperliquid HTTP ' + res.status);
       const data = await res.json();
       cache.set(key, { at: now(), data });
+      failures.delete(key);
       if (cache.size > 400) cache.delete(cache.keys().next().value);
       return data;
-    })().finally(() => inflight.delete(key));
+    })()
+      .catch((error) => {
+        failures.set(key, { at: now(), error });
+        if (failures.size > 400) failures.delete(failures.keys().next().value);
+        if (hit) return hit.data;
+        throw error;
+      })
+      .finally(() => inflight.delete(key));
     inflight.set(key, run);
     return run;
   }
@@ -94,5 +112,11 @@ export function createHyperliquid({ fetchImpl = fetch, now = Date.now, timeoutMs
       .slice(0, limit);
   }
 
-  return { markets, book, candles, trades };
+  // True for a market the exchange actually lists. Made-up names are refused before they
+  // can each cost an upstream call.
+  async function has(coin) {
+    return (await markets()).some((m) => m.coin === coin);
+  }
+
+  return { markets, book, candles, trades, has };
 }

@@ -92,10 +92,10 @@ test('store de-duplicates, sorts newest first and notifies once', () => {
   const s = createStore({ max: 2 });
   const seen = [];
   s.on((i) => seen.push(i.id));
-  assert.equal(s.add({ id: 'a', ts: 1 }), true);
-  assert.equal(s.add({ id: 'a', ts: 1 }), false);
-  s.add({ id: 'b', ts: 3 });
-  s.add({ id: 'c', ts: 2 });
+  assert.equal(s.add({ id: 'a', sourceId: 'w', text: 'A', ts: 1 }), true);
+  assert.equal(s.add({ id: 'a', sourceId: 'w', text: 'A', ts: 1 }), false);
+  s.add({ id: 'b', sourceId: 'x', text: 'B', ts: 3 });
+  s.add({ id: 'c', sourceId: 'y', text: 'C', ts: 2 });
   assert.deepEqual(s.list().map((i) => i.id), ['b', 'c']);
   assert.deepEqual(seen, ['a', 'b', 'c']);
   assert.equal(s.get('a'), null);
@@ -127,7 +127,7 @@ test('poller: first pull is backlog, later items are live, a failing feed does n
 
 import { createChat } from '../src/chat.js';
 import { createMemoryBus } from '../src/bus.js';
-import { storyWords, similarity } from '../src/store.js';
+import { storyKey, sameStory } from '../src/store.js';
 
 test('breaking flag: tickers, listings, X posts and urgent words qualify; routine news does not', () => {
   const wire = { id: 'w', name: 'W', kind: 'wire', crypto: true };
@@ -143,6 +143,7 @@ test('chat: validates room and text, strips control characters, limits rate and 
   let t = 0;
   const bus = createMemoryBus({ now: () => t });
   const chat = createChat({ hasRoom: (r) => r === 'general', bus, now: () => t, maxPerRoom: 3, burst: 2, windowMs: 1000 });
+  await chat.start();
   const seen = [];
   chat.on((m) => seen.push(m.id));
   assert.equal((await chat.post({ room: 'nope', text: 'hi', ip: 'a' })).status, 404);
@@ -164,27 +165,52 @@ test('chat: validates room and text, strips control characters, limits rate and 
 test('chat: a server that starts late loads the history other servers hold', async () => {
   const bus = createMemoryBus();
   const a = createChat({ hasRoom: () => true, bus });
+  await a.start();
   await a.post({ room: 'general', text: 'first', ip: 'a' });
   const b = createChat({ hasRoom: () => true, bus });
-  await b.hydrate();
+  await b.start();
   await a.post({ room: 'general', text: 'second', ip: 'a' });
   assert.deepEqual(b.list('general').map((m) => m.text), ['first', 'second']);
 });
 
-test('stories: the same event from two sources shares a storyId; unrelated news does not', () => {
+test('stories: the same event from two outlets shares a storyId; look-alikes do not', () => {
   const s = createStore();
-  const mk = (id, sourceId, text, ts = 1000) => { const it = { id, sourceId, text, ts }; s.add(it); return it; };
+  const mk = (id, sourceId, text, ts = 1000, publisher) => { const it = { id, sourceId, publisher, text, ts }; return s.add(it) ? it : null; };
   const a = mk('a', 'wsj', 'Acme Motors board ousts founder in surprise vote');
   const b = mk('b', 'nyt', 'Acme Motors ousts founder after surprise board vote');
   const c = mk('c', 'ft', 'Central bank holds interest rates steady');
   const d = mk('d', 'wsj', 'Acme Motors board ousts founder in surprise vote, shares fall');
   const late = mk('e', 'nyt', 'Acme Motors board ousts founder in surprise vote', 1000 + 7 * 3600000);
-  assert.equal(a.storyId, 'a');
-  assert.equal(b.storyId, 'a');
-  assert.equal(c.storyId, 'c');
-  assert.equal(d.storyId, 'a', 'matches the other outlet\'s copy, never its own source');
+  assert.deepEqual([a.storyId, b.storyId, c.storyId], ['a', 'a', 'c']);
+  assert.equal(d.storyId, 'a', 'matches the other outlet\'s copy, never its own');
   assert.equal(late.storyId, 'e', 'outside the six-hour window');
-  assert.ok(similarity(storyWords('Fed holds rates'), storyWords('Fed holds rates')) === 1);
+  const same = (x, y) => sameStory(storyKey(x), storyKey(y)) > 0;
+  for (const [x, y] of [
+    ['Apple beats earnings expectations', 'Amazon beats earnings expectations'],
+    ['Apple Beats Earnings Expectations', 'Amazon Beats Earnings Expectations'],
+    ['Nvidia stock jumps after earnings beat', 'AMD stock jumps after earnings beat'],
+    ['Bitcoin ETF sees record inflows', 'Bitcoin ETF sees record outflows'],
+    ['Tesla shares rise 5% after earnings', 'Tesla shares fall 5% after earnings'],
+    ['Tesla shares rise 5% after earnings', 'Tesla shares rise 8% after earnings'],
+    ['Binance to list PEPE perpetual futures', 'Binance to list WIF perpetual futures']
+  ]) assert.equal(same(x, y), false, x + ' / ' + y);
+  for (const [x, y] of [
+    ['SEC sues Binance over securities violations', 'Binance sued by SEC for alleged securities law breaches'],
+    ['Fed holds rates steady', 'Fed holds rates steady, signals cuts'],
+    ['Fed Holds Rates Steady As Inflation Cools', 'Fed holds rates steady as inflation cools'],
+    ['Exchange halts withdrawals after exploit', 'Exchange halts withdrawals after $200M exploit']
+  ]) assert.equal(same(x, y), true, x + ' / ' + y);
+});
+
+test('store: one outlet repeating a headline across its sections is one item; stale items do not churn', () => {
+  const s = createStore({ max: 3 });
+  assert.equal(s.add({ id: '1', sourceId: 'wsj-markets', publisher: 'wsj', text: 'Stocks slide', ts: 10 }), true);
+  assert.equal(s.add({ id: '2', sourceId: 'wsj-business', publisher: 'wsj', text: 'stocks slide ', ts: 11 }), false);
+  s.add({ id: '3', sourceId: 'a', text: 'Three', ts: 12 });
+  s.add({ id: '4', sourceId: 'a', text: 'Four', ts: 13 });
+  const v = s.version();
+  assert.equal(s.add({ id: 'old', sourceId: 'a', text: 'Too old to keep', ts: 1 }), false);
+  assert.equal(s.version(), v, 'nothing changed, so cached answers stay valid');
 });
 
 test('bus: shared rate limit resets after its window', async () => {
@@ -290,15 +316,81 @@ test('tilt wording', () => {
   assert.equal(readTilt(null, null).tilt, 'unknown');
 });
 
-test('token search: a flood of different words cannot use up the upstream allowance', async () => {
+test('token search: a flood of made-up words cannot shut out words that are in the news', async () => {
   let calls = 0, t = 0;
   const ok = async () => { calls++; return { ok: true, status: 200, json: async () => ({ pairs: [] }) }; };
-  const m = createTokenMatcher({ fetchImpl: ok, now: () => t, upstreamPerMinute: 3, ttlMs: 1000 });
-  await m.search('a'); await m.search('b'); await m.search('c');
-  await assert.rejects(() => m.search('d'), /busy/);
-  assert.equal(calls, 3);
-  assert.deepEqual(await m.search('a'), [], 'a cached word still answers');
+  const m = createTokenMatcher({ fetchImpl: ok, now: () => t, upstreamPerMinute: 6, ttlMs: 1000 });
+  await m.search('junk1'); await m.search('junk2'); await m.search('junk3');
+  await assert.rejects(() => m.search('junk4'), /busy/, 'made-up words get half the allowance');
+  await m.search('OTTER', 8, { priority: true });
+  await m.search('ROCKET', 8, { priority: true });
+  await m.search('BYTE', 8, { priority: true });
+  await assert.rejects(() => m.search('WALRUS', 8, { priority: true }), /busy/, 'the whole allowance is still a ceiling');
+  assert.equal(calls, 6);
+  assert.deepEqual(await m.search('junk1'), [], 'a cached word still answers');
   t = 61000;
-  await m.search('d');
-  assert.equal(calls, 4);
+  await m.search('junk4');
+  assert.equal(calls, 7);
+});
+
+test('rss: angle brackets and ampersands in a headline survive; real markup is removed', () => {
+  const feed = (t) => `<rss><channel><item><title>${t}</title><guid>g</guid></item></channel></rss>`;
+  assert.equal(parseFeed(feed('Yields &lt; 4% as oil &gt; $90; AT&amp;T slides'), 's')[0].text, 'Yields < 4% as oil > $90; AT&T slides');
+  assert.equal(parseFeed(feed('<![CDATA[S&P <5,000 for first time; Nasdaq >1% lower]]>'), 's')[0].text, 'S&P <5,000 for first time; Nasdaq >1% lower');
+  assert.equal(parseFeed(feed('<![CDATA[Markets <b>rally</b> &amp; hold]]>'), 's')[0].text, 'Markets rally & hold');
+});
+
+test('poller: undated, future-dated and aged-out entries never come back as new', async () => {
+  let t = 1_000_000;
+  const store = createStore({ max: 2 });
+  let xml = '';
+  const fetchImpl = async () => ({ ok: true, status: 200, headers: new Map(), text: async () => xml });
+  const poller = createPoller({ sources: [{ id: 's', name: 'S', kind: 'wire', url: 'https://s.example' }], store, fetchImpl, now: () => t, log: { warn() {} } });
+  const item = (title, date) => `<item><title>${title}</title><guid>${title}</guid>${date ? `<pubDate>${new Date(date).toUTCString()}</pubDate>` : ''}</item>`;
+  xml = `<rss><channel>${item('Undated entry')}${item('From the future', t + 86_400_000)}</channel></rss>`;
+  await poller.pollAll();
+  assert.ok(store.list().every((i) => i.ts <= t), 'nothing is dated after it was seen');
+  t += 60_000;
+  xml = `<rss><channel>${item('Undated entry')}${item('From the future', t + 86_400_000)}${item('Newer one', t)}${item('Newer two', t)}</channel></rss>`;
+  await poller.pollAll();
+  assert.deepEqual(store.list().map((i) => i.text).sort(), ['Newer one', 'Newer two'], 'the first two aged out');
+  const v = store.version();
+  t += 60_000;
+  await poller.pollAll();
+  await poller.pollAll();
+  assert.equal(store.version(), v, 'entries already handled are not re-added');
+  assert.ok(!store.list().some((i) => i.text === 'Undated entry'));
+});
+
+test('chat: the general room survives any number of other rooms; spoofed names are cleaned', async () => {
+  const bus = createMemoryBus();
+  const chat = createChat({ hasRoom: () => true, bus, maxRooms: 5, burst: 1000 });
+  await chat.start();
+  await chat.post({ room: 'general', text: 'keep me', ip: 'a' });
+  for (let i = 0; i < 20; i++) await chat.post({ room: 'room' + i, text: 'x', ip: 'a' });
+  assert.deepEqual(chat.list('general').map((m) => m.text), ['keep me']);
+  assert.ok(Object.keys(chat.counts()).length <= 5);
+  assert.equal(chat.list('room19').length, 1, 'the most recent room is kept');
+  const spoof = await chat.post({ room: 'general', name: '‮nimda​', text: 'hi', ip: 'b' });
+  assert.equal(spoof.msg.name, 'nimda');
+});
+
+test('market data: failures are not passed on per request, and the last good answer is kept', async () => {
+  let calls = 0, t = 0, down = false;
+  const base = demoMarketFetch(() => 1_700_000_000_000);
+  const fetchImpl = (u, i) => { calls++; return down ? Promise.resolve({ ok: false, status: 503 }) : base(u, i); };
+  const hl = createHyperliquid({ fetchImpl, now: () => t });
+  const good = await hl.markets();
+  down = true;
+  t = 6000;
+  assert.deepEqual(await hl.markets(), good, 'serves the last good list while the exchange is failing');
+  const before = calls;
+  for (let i = 0; i < 200; i++) await hl.markets();
+  assert.equal(calls, before, 'two hundred requests during an outage made no upstream calls');
+  await assert.rejects(() => hl.book('BTC'), /503/);
+  const afterBook = calls;
+  for (let i = 0; i < 50; i++) await assert.rejects(() => hl.book('BTC'));
+  assert.equal(calls, afterBook);
+  assert.equal(await hl.has('BTC'), true);
+  assert.equal(await hl.has('FAKE1'), false);
 });

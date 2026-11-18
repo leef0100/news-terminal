@@ -3,7 +3,7 @@ import { fetchFeed } from './rss.js';
 import { enrich } from '../enrich.js';
 
 export function createPoller({ sources, store, pollSeconds = 20, fetchImpl = fetch, now = Date.now, log = console }) {
-  const state = new Map(sources.map((s) => [s.id, { cache: {}, first: true, ok: null, error: null, lastPoll: null, count: 0 }]));
+  const state = new Map(sources.map((s) => [s.id, { cache: {}, first: true, ok: null, error: null, lastPoll: null, count: 0, seen: new Set() }]));
   let timer = null;
 
   async function pollOne(source) {
@@ -12,8 +12,15 @@ export function createPoller({ sources, store, pollSeconds = 20, fetchImpl = fet
       const entries = await fetchFeed(source, { fetchImpl, cache: st.cache });
       const seenAt = now();
       for (const e of entries) {
+        // Each entry is handled once per source, for good. Feeds keep listing old entries
+        // long after they have left our window; without this they would come back as "new".
+        if (st.seen.has(e.id)) continue;
+        st.seen.add(e.id);
+        if (st.seen.size > 5000) st.seen.delete(st.seen.values().next().value);
+        // A feed's clock is not trusted: no date means "now", and nothing is from the future.
+        const ts = Math.min(e.ts ?? seenAt, seenAt);
         // Everything in the first pull is backlog: no alerts, no latency figure.
-        const added = store.add(enrich({ ...e, ts: e.ts ?? seenAt, seenAt, backfill: st.first }, source));
+        const added = store.add(enrich({ ...e, ts, seenAt, backfill: st.first }, source));
         if (added) st.count += 1;
       }
       st.first = false;

@@ -93,6 +93,8 @@ export function enrich(raw, source) {
     breaking,
     impact: impactOf(text, breaking),
     sourceId: source.id,
+    // Sections of one outlet (WSJ Markets, WSJ Business) share a publisher.
+    publisher: source.publisher || source.id,
     source: source.name,
     text,
     url: /^https?:\/\//i.test(raw.url || '') ? raw.url : null,

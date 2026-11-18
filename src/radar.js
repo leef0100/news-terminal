@@ -52,9 +52,10 @@ export function createRadar({ fetchImpl = fetch, hl, now = Date.now, coins = RAD
   }
 
   async function build() {
-    const byCoin = Object.fromEntries(coins.map((c) => [c, { coin: c, price: null, positioning: [], funding: [], openInterest: [], coinbasePremiumPct: null }]));
+    // No prototype, so a symbol named "constructor" or "__proto__" can only miss.
+    const byCoin = Object.assign(Object.create(null), Object.fromEntries(coins.map((c) => [c, { coin: c, price: null, positioning: [], funding: [], openInterest: [], coinbasePremiumPct: null }])));
     const bigTrades = [];
-    const spot = {};
+    const spot = Object.create(null);
 
     const binance = venue([
       async () => {

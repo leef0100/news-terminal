@@ -13,8 +13,9 @@ const decode = (s) =>
     const code = e[1].toLowerCase() === 'x' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
     return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : m;
   });
-// Decode first so encoded markup is removed too; the UI only ever sets this as plain text.
-const stripTags = (s) => decode(s).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+// Remove real markup, then decode entities once. A bare "<" or ">" in a headline
+// ("Yields < 4%") is text, not a tag, and must survive; the UI only ever sets plain text.
+const stripTags = (s) => decode(s.replace(/<\/?[a-zA-Z][^<>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
 
 function linkOf(entry) {
   const link = entry.link;

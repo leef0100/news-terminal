@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createStore } from './store.js';
-import { createBus } from './bus.js';
+import { createBus, createMemoryBus } from './bus.js';
 import { createPoller } from './ingest/poller.js';
 import { createTokenMatcher } from './tokens.js';
 import { startDemo, demoFetch } from './ingest/demo.js';
@@ -22,10 +22,16 @@ import { demoMarketFetch } from './ingest/demo-markets.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
-export async function createApp({ demo = false, config, role = 'all', redisUrl = '', sseMax = 50000, frameAncestors = "'self'", trustProxy = false } = {}) {
+export async function createApp({ demo = false, config, role = 'all', redisUrl = '', sseMax = 10000, streamsPerAddress = 12, frameAncestors = "'self'", trustProxy = false } = {}) {
+  // A web-only or ingest-only process has nobody to talk to without Redis: the feed would
+  // stay empty for ever. Better to stop here than to start quietly broken.
+  if (role !== 'all' && !redisUrl) throw new Error(`ROLE=${role} needs REDIS_URL`);
   const startedAt = Date.now();
   const bus = await createBus({ redisUrl });
   const store = createStore();
+  // Limits that protect this one process (searches, market lookups) are counted here, so
+  // they keep working, and cost nothing, when Redis is slow or away.
+  const local = createMemoryBus();
   const ingests = role !== 'web';
   const serves = role !== 'ingest';
 
@@ -38,12 +44,34 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
   const chat = createChat({ hasRoom, bus });
 
   // Feed items cross the bus only when there is more than one process to tell.
+  let reseed = null;
   if (bus.kind === 'redis') {
-    for (const item of await bus.history('feed', 500)) store.add(item);
-    bus.on('feed', (item) => store.add(item));
-    if (ingests) store.on((item) => bus.append('feed', item, 500).catch((err) => console.warn('[bus] publish:', err.message)));
+    // Subscribe first, then read what is already there, so nothing falls between the two.
+    // The same read runs again whenever a dropped connection comes back.
+    const catchUp = async () => {
+      for (const item of await bus.history('feed', 500)) store.add(item);
+    };
+    await bus.on('feed', (item) => store.add(item));
+    await catchUp();
+    bus.onReconnect(catchUp);
+    if (ingests) {
+      const publish = (item) => bus.append('feed', item, 500).catch((err) => console.warn('[bus] publish:', err.message));
+      store.on(publish);
+      // If Redis lost its copy (a restart without saved data), put it back, so servers that
+      // start afterwards still get the whole feed and not just what comes next.
+      reseed = setInterval(async () => {
+        try {
+          if ((await bus.size('feed')) < Math.min(store.size(), 500)) for (const item of store.list(500)) await publishQuiet(item);
+        } catch (err) {
+          console.warn('[bus] reseed:', err.message);
+        }
+      }, 30000);
+      reseed.unref();
+    }
   }
-  await chat.hydrate();
+  // Re-adds an item to the shared copy. Servers that already hold it ignore the repeat.
+  const publishQuiet = (item) => bus.append('feed', item, 500);
+  await chat.start();
 
   // ---------- live connections ----------
   // Each event is turned into text once and the same text is written to every connection.
@@ -54,10 +82,21 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
     if (res.writableLength > 256 * 1024) res.destroy();
     else res.write(frame);
   };
-  const broadcast = (event, obj) => {
-    const frame = `event: ${event}\ndata: ${JSON.stringify(obj)}\n\n`;
-    for (const res of clients) push(res, frame);
+  // Writing to tens of thousands of connections in one go would freeze everything else
+  // (other requests, health checks) for its duration, so it is done in slices with a
+  // breath between them. Slices of successive events queue in order, so every reader
+  // still receives events in the order they happened.
+  const fanout = (targets, frame) => {
+    const list = [...targets];
+    let i = 0;
+    const slice = () => {
+      const end = Math.min(i + 2000, list.length);
+      for (; i < end; i++) if (!list[i].destroyed) push(list[i], frame);
+      if (i < list.length) setImmediate(slice);
+    };
+    slice();
   };
+  const broadcast = (event, obj) => fanout(clients, `event: ${event}\ndata: ${JSON.stringify(obj)}\n\n`);
   store.on((item) => broadcast('item', item));
   // Chat goes only to the people in that room, never to the whole audience.
   const roomClients = new Map();
@@ -65,12 +104,11 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
   chat.on((msg) => {
     const set = roomClients.get(msg.room);
     if (!set) return;
-    const frame = `event: chat\ndata: ${JSON.stringify(msg)}\n\n`;
-    for (const res of set) push(res, frame);
+    fanout(set, `event: chat\ndata: ${JSON.stringify(msg)}\n\n`);
   });
   const beat = setInterval(() => {
-    for (const res of clients) push(res, ': ping\n\n');
-    for (const set of roomClients.values()) for (const res of set) push(res, ': ping\n\n');
+    fanout(clients, ': ping\n\n');
+    for (const set of roomClients.values()) fanout(set, ': ping\n\n');
   }, 20000);
   beat.unref();
 
@@ -113,7 +151,13 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
       'cache-control': `public, max-age=0, s-maxage=${seconds}`,
       'cdn-cache-control': `public, max-age=${seconds}, stale-while-revalidate=${seconds * 5}`
     });
-  const fail = (res, err) => res.status(502).set('cache-control', 'no-store').json({ error: String(err.message || err) });
+  // An upstream failure is held by the CDN for two seconds: long enough that an outage does
+  // not send the whole audience to this server, short enough to recover at once.
+  const fail = (res, err) => {
+    console.warn('[upstream]', String(err.message || err));
+    shared(res, 2).status(502).json({ error: 'That data is unavailable right now' });
+  };
+  const refuse = (res, status, body) => res.status(status).set('cache-control', 'no-store').json(body);
 
   // The busiest answers are built, compressed and fingerprinted once per change, then the
   // same bytes go to everyone. A browser that already has the current version gets a
@@ -136,7 +180,9 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
   if (serves) {
     app.use(
       express.static(path.join(root, 'public'), {
-        setHeaders: (res, file) => res.set('cache-control', file.endsWith('.html') ? 'no-cache' : 'public, max-age=300')
+        // Every file is re-checked on load (a tiny "not modified" answer when unchanged), so a
+        // new release can never be shown as new pages running old scripts.
+        setHeaders: (res) => res.set('cache-control', 'no-cache')
       })
     );
     // The charting library is served from the installed package, so no outside CDN is needed.
@@ -155,7 +201,7 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
     // One story by id, so a shared link still opens after the story has scrolled out of the feed.
     app.get('/api/item', (req, res) => {
       const item = store.get(String(req.query.id || ''));
-      if (!item) return res.status(404).set('cache-control', 'no-store').json({ error: 'This story is no longer available' });
+      if (!item) return refuse(res, 404, { error: 'This story is no longer available' });
       shared(res, 60).json({ item });
     });
 
@@ -164,14 +210,26 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
     });
 
     // Solana tokens matching one ticker or name. Cached per term, shared by everyone.
+    // Words in the news right now: their searches are never refused for being too many.
+    let inFeed = { version: -1, set: new Set() };
+    const feedTerms = () => {
+      if (inFeed.version !== store.version()) {
+        const set = new Set();
+        for (const it of store.list(500)) for (const t of [...(it.cashtags || []), ...(it.terms || [])]) set.add(String(t).toLowerCase());
+        inFeed = { version: store.version(), set };
+      }
+      return inFeed.set;
+    };
     app.get('/api/tokens', async (req, res) => {
       const q = String(req.query.q || '').trim().replace(/^\$/, '');
-      if (!/^[\p{L}\p{N} ._-]{1,40}$/u.test(q)) return res.status(400).json({ tokens: [], error: 'Enter a ticker or name' });
+      if (!/^[\p{L}\p{N} ._-]{1,40}$/u.test(q)) return refuse(res, 400, { tokens: [], error: 'Enter a ticker or name' });
+      const priority = feedTerms().has(q.toLowerCase());
+      const ok = (await local.allow('tok:' + req.ip, 90, 60000)) && (priority || (await local.allow('tokx:' + req.ip, 20, 60000)));
+      if (!ok) return refuse(res, 429, { tokens: [], error: 'Too many searches, try again in a minute' });
       try {
-        if (!(await bus.allow('tok:' + req.ip, 90, 60000))) return res.status(429).json({ tokens: [], error: 'Too many searches, try again in a minute' });
-        shared(res, 15).json({ term: q, tokens: await matcher.search(q) });
+        shared(res, 15).json({ term: q, tokens: await matcher.search(q, 8, { priority }) });
       } catch (err) {
-        res.status(502).set('cache-control', 'no-store').json({ term: q, tokens: [], error: String(err.message || err) });
+        shared(res, 2).status(502).json({ term: q, tokens: [], error: String(err.message || err).startsWith('Token search') ? String(err.message) : 'Token search is unavailable right now' });
       }
     });
 
@@ -189,8 +247,11 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
     // straight to the exchange's own stream, so they put no load on this server.
     const market = (seconds, fn) => async (req, res) => {
       const coin = String(req.query.coin || 'BTC');
-      if (!validCoin(coin)) return res.status(400).json({ error: 'Unknown market' });
+      if (!validCoin(coin)) return refuse(res, 400, { error: 'Unknown market' });
+      if (!(await local.allow('mkt:' + req.ip, 600, 60000))) return refuse(res, 429, { error: 'Too many requests' });
       try {
+        // Only markets the exchange lists; a made-up name must not cost an upstream call.
+        if (!(await hl.has(coin))) return refuse(res, 400, { error: 'Unknown market' });
         shared(res, seconds).json(await fn(coin, req));
       } catch (err) {
         fail(res, err);
@@ -219,7 +280,7 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
       const b = req.body && typeof req.body === 'object' ? req.body : {};
       try {
         const out = await chat.post({ room: b.room, name: b.name, text: b.text, ip: req.ip });
-        if (out.error) return res.status(out.status).json({ error: out.error });
+        if (out.error) return refuse(res, out.status, { error: out.error });
         res.json({ message: out.msg });
       } catch (err) {
         res.status(503).json({ error: 'Chat is unavailable right now' });
@@ -230,18 +291,30 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
       shared(res, 2).json({ counts: chat.counts() });
     });
 
-    const openStream = (res) => {
+    // One address may hold only so many live connections, so a single client cannot take
+    // every slot and push everyone else onto the slower path.
+    const perAddress = new Map();
+    const full = (req) => clients.size + roomCount >= sseMax || (perAddress.get(req.ip) || 0) >= streamsPerAddress;
+    const openStream = (req, res) => {
       res.set({ 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive', 'x-accel-buffering': 'no' });
       res.flushHeaders();
-      res.write('retry: 3000\n\n');
+      // Each browser is given its own reconnect delay, so after a restart they do not all
+      // come back in the same instant.
+      res.write(`retry: ${2000 + Math.floor(Math.random() * 4000)}\n\n`);
+      const ip = req.ip;
+      perAddress.set(ip, (perAddress.get(ip) || 0) + 1);
+      req.on('close', () => {
+        const n = (perAddress.get(ip) || 1) - 1;
+        if (n <= 0) perAddress.delete(ip); else perAddress.set(ip, n);
+      });
     };
 
     // Live chat for one room, held only while someone has that room open.
     app.get('/api/chat/stream', (req, res) => {
       const room = String(req.query.room || 'general');
       if (!hasRoom(room)) return res.status(404).set('cache-control', 'no-store').end();
-      if (clients.size + roomCount >= sseMax) return res.status(503).set({ 'retry-after': '30', 'cache-control': 'no-store' }).end();
-      openStream(res);
+      if (full(req)) return res.status(503).set({ 'retry-after': '30', 'cache-control': 'no-store' }).end();
+      openStream(req, res);
       if (!roomClients.has(room)) roomClients.set(room, new Set());
       roomClients.get(room).add(res);
       roomCount += 1;
@@ -256,8 +329,8 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
     // Live push of new feed items (Server-Sent Events).
     app.get('/api/stream', (req, res) => {
       // Past the limit the browser falls back to polling the cached feed.
-      if (clients.size + roomCount >= sseMax) return res.status(503).set({ 'retry-after': '30', 'cache-control': 'no-store' }).end();
-      openStream(res);
+      if (full(req)) return res.status(503).set({ 'retry-after': '30', 'cache-control': 'no-store' }).end();
+      openStream(req, res);
       clients.add(res);
       req.on('close', () => clients.delete(res));
     });
@@ -294,6 +367,7 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
     },
     async stop() {
       clearInterval(beat);
+      clearInterval(reseed);
       if (stopFeed) stopFeed();
       for (const res of clients) res.end();
       clients.clear();
@@ -314,14 +388,20 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     config,
     role,
     redisUrl: process.env.REDIS_URL || '',
-    sseMax: Number(process.env.SSE_MAX) || 50000,
+    sseMax: Number(process.env.SSE_MAX) || 10000,
+    streamsPerAddress: Number(process.env.STREAMS_PER_ADDRESS) || 12,
     frameAncestors: process.env.FRAME_ANCESTORS || "'self'",
-    trustProxy: process.env.TRUST_PROXY ? (Number(process.env.TRUST_PROXY) || process.env.TRUST_PROXY) : false
+    // A number of proxies in front (1 for a load balancer, 2 for a CDN plus a load balancer), or "true".
+    trustProxy: /^\d+$/.test(process.env.TRUST_PROXY || '') ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY === 'true'
   });
   const server = svc.app.listen(port, async () => {
     await svc.start();
     console.log(`Halftone${demo ? ' (demo data)' : ''} [${role}, ${svc.bus.kind}] running at http://localhost:${port}`);
   });
+  // Longer than a load balancer's usual idle timeout, so it never reuses a connection this
+  // side has just closed (the cause of stray 502s).
+  server.keepAliveTimeout = 65000;
+  server.headersTimeout = 66000;
   // Live connections never finish on their own; give them a moment, then close.
   const shutdown = () => {
     server.close(() => process.exit(0));
