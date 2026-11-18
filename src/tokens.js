@@ -59,9 +59,20 @@ export function rankPairs(pairs, term, postTs, nowTs) {
   return out;
 }
 
-export function createTokenMatcher({ fetchImpl = fetch, ttlMs = 15000, now = Date.now, timeoutMs = 6000 } = {}) {
+export function createTokenMatcher({ fetchImpl = fetch, ttlMs = 15000, now = Date.now, timeoutMs = 6000, upstreamPerMinute = 240 } = {}) {
   const cache = new Map();
   const inflight = new Map();
+  // The search service allows a fixed number of calls a minute for the whole site. Many
+  // people searching many different words must not spend it all, so new words are refused
+  // (cached ones still answer) once this process has used its share for the minute.
+  let windowStart = 0;
+  let used = 0;
+  const spend = () => {
+    const t = now();
+    if (t - windowStart >= 60000) { windowStart = t; used = 0; }
+    used += 1;
+    return used <= upstreamPerMinute;
+  };
 
   // One upstream call per term per ttl, however many people ask at once.
   async function pairsFor(term) {
@@ -69,13 +80,17 @@ export function createTokenMatcher({ fetchImpl = fetch, ttlMs = 15000, now = Dat
     const hit = cache.get(key);
     if (hit && now() - hit.at < ttlMs) return hit.pairs;
     if (inflight.has(key)) return inflight.get(key);
+    if (!spend()) {
+      if (hit) return hit.pairs;
+      throw new Error('Token search is busy, try again shortly');
+    }
     const run = (async () => {
       const res = await fetchImpl(SEARCH + encodeURIComponent(term), { signal: AbortSignal.timeout(timeoutMs) });
       if (!res.ok) throw new Error('Token search failed: HTTP ' + res.status);
       const body = await res.json();
       const pairs = Array.isArray(body?.pairs) ? body.pairs : [];
       cache.set(key, { at: now(), pairs });
-      if (cache.size > 2000) cache.delete(cache.keys().next().value);
+      if (cache.size > 500) cache.delete(cache.keys().next().value);
       return pairs;
     })().finally(() => inflight.delete(key));
     inflight.set(key, run);

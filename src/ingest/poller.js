@@ -27,7 +27,17 @@ export function createPoller({ sources, store, pollSeconds = 20, fetchImpl = fet
     st.lastPoll = now();
   }
 
-  const pollAll = () => Promise.allSettled(sources.map(pollOne));
+  // A slow round is allowed to finish; the next tick is skipped rather than piled on top.
+  let running = false;
+  const pollAll = async () => {
+    if (running) return;
+    running = true;
+    try {
+      await Promise.allSettled(sources.map(pollOne));
+    } finally {
+      running = false;
+    }
+  };
 
   return {
     pollAll,

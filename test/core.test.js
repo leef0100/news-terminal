@@ -289,3 +289,16 @@ test('tilt wording', () => {
   assert.equal(readTilt(50, null).tilt, 'balanced');
   assert.equal(readTilt(null, null).tilt, 'unknown');
 });
+
+test('token search: a flood of different words cannot use up the upstream allowance', async () => {
+  let calls = 0, t = 0;
+  const ok = async () => { calls++; return { ok: true, status: 200, json: async () => ({ pairs: [] }) }; };
+  const m = createTokenMatcher({ fetchImpl: ok, now: () => t, upstreamPerMinute: 3, ttlMs: 1000 });
+  await m.search('a'); await m.search('b'); await m.search('c');
+  await assert.rejects(() => m.search('d'), /busy/);
+  assert.equal(calls, 3);
+  assert.deepEqual(await m.search('a'), [], 'a cached word still answers');
+  t = 61000;
+  await m.search('d');
+  assert.equal(calls, 4);
+});

@@ -166,3 +166,26 @@ test('server: the feed answers "not modified" to a browser that already has the 
     server.close();
   }
 });
+
+test('server: bad requests get short JSON errors, and feed sizes snap to a fixed menu', async () => {
+  const svc = await createApp({ demo: true });
+  const server = await listen(svc.app);
+  await svc.start();
+  try {
+    const bad = await fetch(url(server, '/api/chat'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{bad' });
+    assert.equal(bad.status, 400);
+    assert.deepEqual(await bad.json(), { error: 'Bad request' });
+    const big = await fetch(url(server, '/api/chat'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ text: 'x'.repeat(5000) }) });
+    assert.equal(big.status, 413);
+    assert.match(big.headers.get('content-type'), /json/);
+    const missing = await fetch(url(server, '/api/nope'));
+    assert.equal(missing.status, 404);
+    assert.deepEqual(await missing.json(), { error: 'Not found' });
+    const a = await fetch(url(server, '/api/feed?limit=7'));
+    const b = await fetch(url(server, '/api/feed?limit=49'));
+    assert.equal(a.headers.get('etag'), b.headers.get('etag'));
+  } finally {
+    await svc.stop();
+    server.close();
+  }
+});

@@ -48,9 +48,15 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
   // ---------- live connections ----------
   // Each event is turned into text once and the same text is written to every connection.
   const clients = new Set();
+  // A reader that has stopped reading would otherwise have everything queued up for it in
+  // memory. Past a quarter megabyte waiting, the connection is dropped; the browser reconnects.
+  const push = (res, frame) => {
+    if (res.writableLength > 256 * 1024) res.destroy();
+    else res.write(frame);
+  };
   const broadcast = (event, obj) => {
     const frame = `event: ${event}\ndata: ${JSON.stringify(obj)}\n\n`;
-    for (const res of clients) res.write(frame);
+    for (const res of clients) push(res, frame);
   };
   store.on((item) => broadcast('item', item));
   // Chat goes only to the people in that room, never to the whole audience.
@@ -60,11 +66,11 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
     const set = roomClients.get(msg.room);
     if (!set) return;
     const frame = `event: chat\ndata: ${JSON.stringify(msg)}\n\n`;
-    for (const res of set) res.write(frame);
+    for (const res of set) push(res, frame);
   });
   const beat = setInterval(() => {
-    for (const res of clients) res.write(': ping\n\n');
-    for (const set of roomClients.values()) for (const res of set) res.write(': ping\n\n');
+    for (const res of clients) push(res, ': ping\n\n');
+    for (const set of roomClients.values()) for (const res of set) push(res, ': ping\n\n');
   }, 20000);
   beat.unref();
 
@@ -140,7 +146,9 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
     });
 
     app.get('/api/feed', (req, res) => {
-      const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 150, 1), 500);
+      // Three sizes only: every distinct size is a separate cached copy.
+      const asked = parseInt(req.query.limit, 10) || 150;
+      const limit = asked <= 50 ? 50 : asked <= 150 ? 150 : 500;
       sendBuilt(req, res, 'feed:' + limit, store.version(), 1, () => ({ demo, items: store.list(limit) }));
     });
 
@@ -254,6 +262,15 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
       req.on('close', () => clients.delete(res));
     });
   }
+
+  // Unknown API paths and broken requests get a short JSON answer, never a stack trace.
+  app.use('/api', (_req, res) => res.status(404).set('cache-control', 'no-store').json({ error: 'Not found' }));
+  // eslint-disable-next-line no-unused-vars
+  app.use((err, _req, res, _next) => {
+    const status = err && err.status >= 400 && err.status < 500 ? err.status : 500;
+    if (status === 500) console.error('[server]', err);
+    res.status(status).set('cache-control', 'no-store').json({ error: status === 500 ? 'Something went wrong' : 'Bad request' });
+  });
 
   let stopFeed = null;
   return {
