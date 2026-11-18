@@ -1,0 +1,12 @@
+{
+  "pollSeconds": 20,
+  "sources": [
+    { "id": "coindesk", "name": "CoinDesk", "kind": "wire", "crypto": true, "url": "https://www.coindesk.com/arc/outboundfeeds/rss/" },
+    { "id": "cointelegraph", "name": "Cointelegraph", "kind": "wire", "crypto": true, "url": "https://cointelegraph.com/rss" },
+    { "id": "decrypt", "name": "Decrypt", "kind": "wire", "crypto": true, "url": "https://decrypt.co/feed" },
+    { "id": "theblock", "name": "The Block", "kind": "wire", "crypto": true, "url": "https://www.theblock.co/rss.xml" },
+    { "id": "wsj-markets", "name": "WSJ Markets", "kind": "wire", "url": "https://feeds.content.dowjones.io/public/rss/RSSMarketsMain" },
+    { "id": "nyt-business", "name": "NYT Business", "kind": "wire", "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml" },
+    { "id": "ft-markets", "name": "FT Markets", "kind": "wire", "url": "https://www.ft.com/markets?format=rss" }
+  ]
+}

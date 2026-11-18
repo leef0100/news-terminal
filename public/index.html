@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>News Terminal</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"></path></svg>
+    <span>News Terminal</span>
+  </div>
+  <div class="search">
+    <label for="q" class="sr">Filter the feed</label>
+    <input id="q" type="search" placeholder="Filter feed: ticker, word, source   ( / )" autocomplete="off">
+  </div>
+  <div class="status">
+    <span id="live" class="live off"><span class="dot" aria-hidden="true"></span><span id="liveText">Connecting</span></span>
+    <span id="demoBadge" class="badge warn" hidden>Demo data</span>
+  </div>
+</header>
+
+<div class="cols">
+  <nav class="rail" aria-label="Sources and alerts">
+    <section>
+      <h2 class="eyebrow">Sources</h2>
+      <div id="kinds" class="stack"></div>
+    </section>
+    <section>
+      <h2 class="eyebrow">Keyword alerts</h2>
+      <div id="keywords" class="chips"></div>
+      <form id="kwForm" class="row">
+        <label for="kw" class="sr">Add a keyword alert</label>
+        <input id="kw" type="text" placeholder="Keyword" maxlength="30" autocomplete="off">
+        <button type="submit" class="btn">Add</button>
+      </form>
+    </section>
+    <section>
+      <h2 class="eyebrow">Alerts</h2>
+      <label class="check"><input id="sound" type="checkbox"> Sound on keyword hit</label>
+      <label class="check"><input id="soundAll" type="checkbox"> Sound on every new item</label>
+    </section>
+    <section class="hint">
+      <h2 class="eyebrow">Keys</h2>
+      <p><kbd>J</kbd> <kbd>K</kbd> move · <kbd>C</kbd> copy address · <kbd>Enter</kbd> open token · <kbd>/</kbd> filter</p>
+    </section>
+  </nav>
+
+  <main class="feed">
+    <div class="feedHead">
+      <h1>Live feed</h1>
+      <span id="count" class="muted"></span>
+    </div>
+    <div id="feed" class="stack" aria-live="polite"></div>
+    <p id="empty" class="emptyBox" hidden>Nothing yet. New items appear here as they arrive.</p>
+  </main>
+
+  <aside class="detail" aria-label="Selected item">
+    <div id="detailEmpty" class="emptyBox">Select an item to see matching tokens.</div>
+    <div id="detail" hidden>
+      <div class="card">
+        <div class="meta"><span id="dTime" class="mono"></span><span id="dSource" class="strong"></span></div>
+        <div id="dText" class="dText"></div>
+        <a id="dLink" target="_blank" rel="noopener noreferrer" hidden>Open original</a>
+      </div>
+
+      <h2>Matching tokens</h2>
+      <p class="muted small">Tokens that existed before the item come first. Anything created after it is flagged.</p>
+      <div id="terms" class="chips"></div>
+      <form id="termForm" class="row">
+        <label for="term" class="sr">Search tokens for this item</label>
+        <input id="term" type="text" placeholder="Search a ticker or name" maxlength="40" autocomplete="off">
+        <button type="submit" class="btn">Search</button>
+      </form>
+      <div id="matchState" class="emptyBox" hidden></div>
+      <div id="matches" class="stack"></div>
+
+      <div id="buy" class="card" hidden>
+        <h2>Quick buy</h2>
+        <div class="addr"><span id="bAddr" class="mono"></span></div>
+        <div class="row">
+          <button id="copy" type="button" class="btn grow">Copy address</button>
+          <a id="chart" class="btn grow" target="_blank" rel="noopener noreferrer">Chart</a>
+        </div>
+        <a id="open" class="btn primary" target="_blank" rel="noopener noreferrer">Open token</a>
+        <p class="muted small">Check the address before you buy. Flagged tokens were created after the news.</p>
+      </div>
+    </div>
+  </aside>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

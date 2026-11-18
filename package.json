@@ -1,0 +1,17 @@
+{
+  "name": "news-terminal",
+  "version": "0.1.0",
+  "description": "Real-time news feed for memecoin traders with token matching and copycat flagging",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node src/server.js",
+    "demo": "node src/server.js --demo",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "fast-xml-parser": "^4.5.0"
+  }
+}
