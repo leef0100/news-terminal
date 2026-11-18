@@ -15,6 +15,7 @@ const SOURCES = {
 const SCRIPT = [
   ['x1', 'Sample post: thinking about otters again. $OTTER'],
   ['biz', 'Sample headline: Acme Motors board ousts founder in surprise vote'],
+  ['tech', 'Sample headline: Acme Motors ousts founder after surprise board vote'],
   ['world', 'Sample headline: Central bank holds interest rates, signals cuts next quarter'],
   ['crypto', 'Sample headline: Major exchange to list $ROCKET spot pairs at 12:00 UTC'],
   ['tech', 'Sample headline: Globex unveils AI chip, claims record speed'],

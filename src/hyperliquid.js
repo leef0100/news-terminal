@@ -7,22 +7,29 @@ export const validCoin = (c) => typeof c === 'string' && /^[A-Za-z0-9:]{1,20}$/.
 
 export function createHyperliquid({ fetchImpl = fetch, now = Date.now, timeoutMs = 6000 } = {}) {
   const cache = new Map();
+  const inflight = new Map();
 
   async function info(body, ttlMs) {
     const key = JSON.stringify(body);
     const hit = cache.get(key);
     if (hit && now() - hit.at < ttlMs) return hit.data;
-    const res = await fetchImpl(API, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: key,
-      signal: AbortSignal.timeout(timeoutMs)
-    });
-    if (!res.ok) throw new Error('Hyperliquid HTTP ' + res.status);
-    const data = await res.json();
-    cache.set(key, { at: now(), data });
-    if (cache.size > 400) cache.delete(cache.keys().next().value);
-    return data;
+    // Requests that arrive while one is already on its way share its answer.
+    if (inflight.has(key)) return inflight.get(key);
+    const run = (async () => {
+      const res = await fetchImpl(API, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: key,
+        signal: AbortSignal.timeout(timeoutMs)
+      });
+      if (!res.ok) throw new Error('Hyperliquid HTTP ' + res.status);
+      const data = await res.json();
+      cache.set(key, { at: now(), data });
+      if (cache.size > 400) cache.delete(cache.keys().next().value);
+      return data;
+    })().finally(() => inflight.delete(key));
+    inflight.set(key, run);
+    return run;
   }
 
   async function markets() {

@@ -126,6 +126,8 @@ test('poller: first pull is backlog, later items are live, a failing feed does n
 });
 
 import { createChat } from '../src/chat.js';
+import { createMemoryBus } from '../src/bus.js';
+import { storyWords, similarity } from '../src/store.js';
 
 test('breaking flag: tickers, listings, X posts and urgent words qualify; routine news does not', () => {
   const wire = { id: 'w', name: 'W', kind: 'wire', crypto: true };
@@ -137,25 +139,75 @@ test('breaking flag: tickers, listings, X posts and urgent words qualify; routin
   assert.equal(mk('Quarterly review of custody rules published'), false);
 });
 
-test('chat: validates room and text, strips control characters, limits rate and room size', () => {
+test('chat: validates room and text, strips control characters, limits rate and room size', async () => {
   let t = 0;
-  const chat = createChat({ hasRoom: (r) => r === 'general', now: () => t, maxPerRoom: 3, burst: 2, windowMs: 1000 });
+  const bus = createMemoryBus({ now: () => t });
+  const chat = createChat({ hasRoom: (r) => r === 'general', bus, now: () => t, maxPerRoom: 3, burst: 2, windowMs: 1000 });
   const seen = [];
   chat.on((m) => seen.push(m.id));
-  assert.equal(chat.post({ room: 'nope', text: 'hi', ip: 'a' }).status, 404);
-  assert.equal(chat.post({ room: 'general', text: '   ', ip: 'a' }).status, 400);
-  const ok = chat.post({ room: 'general', name: ' bob\n ', text: 'gm\u0007  all', ip: 'a' });
+  assert.equal((await chat.post({ room: 'nope', text: 'hi', ip: 'a' })).status, 404);
+  assert.equal((await chat.post({ room: 'general', text: '   ', ip: 'a' })).status, 400);
+  const ok = await chat.post({ room: 'general', name: ' bob\n ', text: 'gm\u0007  all', ip: 'a' });
   assert.deepEqual([ok.status, ok.msg.name, ok.msg.text], [200, 'bob', 'gm all']);
-  assert.equal(chat.post({ room: 'general', text: 'x'.repeat(500), ip: 'a' }).msg.text.length, 280);
-  assert.equal(chat.post({ room: 'general', text: 'third', ip: 'a' }).status, 429);
-  assert.equal(chat.post({ room: 'general', text: 'other person', ip: 'b' }).status, 200);
+  assert.equal((await chat.post({ room: 'general', text: 'x'.repeat(500), ip: 'a' })).msg.text.length, 280);
+  assert.equal((await chat.post({ room: 'general', text: 'third', ip: 'a' })).status, 429);
+  assert.equal((await chat.post({ room: 'general', text: 'other person', ip: 'b' })).status, 200);
   t = 2000;
-  chat.post({ room: 'general', text: 'later', ip: 'a' });
-  chat.post({ room: 'general', text: 'latest', ip: 'a' });
+  await chat.post({ room: 'general', text: 'later', ip: 'a' });
+  await chat.post({ room: 'general', text: 'latest', ip: 'a' });
   assert.deepEqual(chat.list('general').map((m) => m.text), ['other person', 'later', 'latest']);
   assert.equal(chat.counts().general, 3);
-  assert.equal(seen.length, 5);
-  assert.equal(chat.post({ room: 'general', text: 'anon check', ip: 'c' }).msg.name, 'anon');
+  assert.equal(new Set(seen).size, 5);
+  assert.equal((await chat.post({ room: 'general', text: 'anon check', ip: 'c' })).msg.name, 'anon');
+});
+
+test('chat: a server that starts late loads the history other servers hold', async () => {
+  const bus = createMemoryBus();
+  const a = createChat({ hasRoom: () => true, bus });
+  await a.post({ room: 'general', text: 'first', ip: 'a' });
+  const b = createChat({ hasRoom: () => true, bus });
+  await b.hydrate();
+  await a.post({ room: 'general', text: 'second', ip: 'a' });
+  assert.deepEqual(b.list('general').map((m) => m.text), ['first', 'second']);
+});
+
+test('stories: the same event from two sources shares a storyId; unrelated news does not', () => {
+  const s = createStore();
+  const mk = (id, sourceId, text, ts = 1000) => { const it = { id, sourceId, text, ts }; s.add(it); return it; };
+  const a = mk('a', 'wsj', 'Acme Motors board ousts founder in surprise vote');
+  const b = mk('b', 'nyt', 'Acme Motors ousts founder after surprise board vote');
+  const c = mk('c', 'ft', 'Central bank holds interest rates steady');
+  const d = mk('d', 'wsj', 'Acme Motors board ousts founder in surprise vote, shares fall');
+  const late = mk('e', 'nyt', 'Acme Motors board ousts founder in surprise vote', 1000 + 7 * 3600000);
+  assert.equal(a.storyId, 'a');
+  assert.equal(b.storyId, 'a');
+  assert.equal(c.storyId, 'c');
+  assert.equal(d.storyId, 'a', 'matches the other outlet\'s copy, never its own source');
+  assert.equal(late.storyId, 'e', 'outside the six-hour window');
+  assert.ok(similarity(storyWords('Fed holds rates'), storyWords('Fed holds rates')) === 1);
+});
+
+test('bus: shared rate limit resets after its window', async () => {
+  let t = 0;
+  const bus = createMemoryBus({ now: () => t });
+  assert.deepEqual([await bus.allow('k', 2, 100), await bus.allow('k', 2, 100), await bus.allow('k', 2, 100)], [true, true, false]);
+  t = 100;
+  assert.equal(await bus.allow('k', 2, 100), true);
+  const got = [];
+  bus.on('s', (o) => got.push(o.n));
+  for (let n = 1; n <= 4; n++) await bus.append('s', { n }, 3);
+  assert.deepEqual(got, [1, 2, 3, 4]);
+  assert.deepEqual((await bus.history('s')).map((o) => o.n), [2, 3, 4]);
+});
+
+test('token search: many callers at once cause a single upstream request', async () => {
+  let calls = 0;
+  const slow = async () => { calls++; await new Promise((r) => setTimeout(r, 20)); return { ok: true, status: 200, json: async () => ({ pairs: [pair('REALpump', 'OTTER', 'Otter', POST - 1, 50_000), pair('BIGpump', 'OTTER', 'Otter Two', POST + 5, 90_000)] }) }; };
+  const m = createTokenMatcher({ fetchImpl: slow });
+  const all = await Promise.all(Array.from({ length: 50 }, () => m.search('OTTER')));
+  assert.equal(calls, 1);
+  assert.deepEqual(all[0].map((t) => t.address), ['BIGpump', 'REALpump'], 'deepest liquidity first');
+  assert.ok(all[0].every((t) => t.createdAt > 0 && t.createdAfterPost === false));
 });
 
 import { topicOf, impactOf } from '../src/enrich.js';

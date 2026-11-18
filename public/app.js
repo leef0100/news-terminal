@@ -1,3 +1,4 @@
+// Home, News and Breaking pages. Radar, Markets and wallet connect live in their own files.
 (function () {
   'use strict';
 
@@ -22,17 +23,23 @@
     macro: 'M5 20V10 M11 20V4 M17 20v-7 M22 20H2',
     politics: 'M3 21h18 M5 21V10 M9.5 21V10 M14.5 21V10 M19 21V10 M2 10h20L12 3z',
     world: 'M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18z M3 12h18 M12 3c3 3 3 15 0 18 M12 3c-3 3-3 15 0 18',
-    chat: 'M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'
+    chat: 'M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
+    star: 'M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 17l-5.2 2.7 1-5.9L3.5 9.7l5.9-.8z'
   };
-  var VIEWS = ['home', 'terminal', 'breaking', 'radar', 'markets'];
-  var MAX_ITEMS = 300;
+  var VIEWS = ['home', 'news', 'breaking', 'radar', 'markets'];
+  var MAX_ITEMS = 400;
+  var PAGE = 60;
   var HOUR = 3600000;
 
   var state = {
-    view: 'home', items: [], byId: {}, kind: 'all', query: '', selected: null, fresh: {},
+    view: 'home', items: [], byId: {}, loaded: false, failed: false,
+    kind: 'all', query: '', source: '', onlyBreaking: false, onlySaved: false, shown: PAGE,
+    selected: null, pendingSelect: null, fresh: {}, queued: 0,
     keywords: load('nt.keywords', []), sound: load('nt.sound', false), soundAll: load('nt.soundAll', false),
+    saved: load('nt.saved', []), compact: load('nt.compact', false),
     tokens: [], token: null, matchReq: 0, activeTerm: null,
-    room: 'general', msgs: {}, counts: {}, seenMsg: {}, name: load('nt.name', ''), collageAt: 0
+    room: 'general', msgs: {}, counts: {}, seenMsg: {}, name: load('nt.name', ''),
+    clipSlots: [], clipNext: 0
   };
   if (!state.name) { state.name = 'anon-' + Math.floor(1000 + Math.random() * 9000); save('nt.name', state.name); }
 
@@ -60,12 +67,15 @@
     s.setAttribute('stroke-linejoin', 'round');
     s.setAttribute('aria-hidden', 'true');
     var p = document.createElementNS(ns, 'path');
-    p.setAttribute('d', ICONS[name] || ICONS.wire);
+    p.setAttribute('d', ICONS[name] || ICONS.world);
     s.appendChild(p);
     return s;
   }
   function iconBox(name) { var b = el('span', 'ico'); b.appendChild(icon(name)); return b; }
   function safeUrl(u) { return typeof u === 'string' && /^https:\/\//i.test(u) ? u : null; }
+  function copyText(text, done) {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () {});
+  }
 
   // ---------- formatting ----------
   function clock(ts) {
@@ -84,6 +94,7 @@
     var s = Math.max(0, Math.round((Date.now() - ts) / 1000));
     return s < 45 ? 'just now' : dur(s) + ' ago';
   }
+  function fullTime(ts) { return new Date(ts).toLocaleString(); }
   function money(n) {
     if (!n) return 'n/a';
     if (n >= 1e9) return '$' + (n / 1e9).toFixed(1) + 'B';
@@ -98,20 +109,57 @@
     return ms < 60000 ? '+' + (ms / 1000).toFixed(1) + 's' : '+' + Math.round(ms / 60000) + 'm';
   }
   function shortAddr(a) { return a.length > 10 ? a.slice(0, 4) + '…' + a.slice(-4) : a; }
+  function topicName(it) { return KIND_NAME[it.topic] || 'News'; }
 
   // ---------- data ----------
   function keywordHits(item) {
     var t = item.text.toLowerCase();
     return state.keywords.filter(function (k) { return t.indexOf(k.toLowerCase()) !== -1; });
   }
-  function visible() {
-    var q = state.query.toLowerCase();
-    return state.items.filter(function (it) {
-      if (state.kind !== 'all' && it.topic !== state.kind) return false;
-      if (q && (it.text + ' ' + it.source).toLowerCase().indexOf(q) === -1) return false;
-      return true;
-    });
+  function isSaved(id) { return state.saved.some(function (s) { return s.id === id; }); }
+  function toggleSaved(it) {
+    if (isSaved(it.id)) state.saved = state.saved.filter(function (s) { return s.id !== it.id; });
+    else state.saved = [it].concat(state.saved).slice(0, 100);
+    save('nt.saved', state.saved);
   }
+
+  function passes(it) {
+    if (state.kind !== 'all' && it.topic !== state.kind) return false;
+    if (state.source && it.source !== state.source) return false;
+    if (state.onlyBreaking && !it.breaking) return false;
+    var q = state.query.toLowerCase();
+    if (q && (it.text + ' ' + it.source).toLowerCase().indexOf(q) === -1) return false;
+    return true;
+  }
+
+  // One row per story: the first outlet to report it leads, later copies hang off it.
+  function stories() {
+    var pool = state.onlySaved ? state.saved : state.items;
+    var groups = {}, order = [];
+    pool.forEach(function (it) {
+      var key = state.onlySaved ? it.id : (it.storyId || it.id);
+      if (!groups[key]) { groups[key] = []; order.push(key); }
+      groups[key].push(it);
+    });
+    var out = [];
+    order.forEach(function (key) {
+      var all = groups[key].slice().sort(function (a, b) { return a.ts - b.ts; });
+      if (!all.some(passes)) return;
+      out.push({ lead: all[0], also: all.slice(1) });
+    });
+    out.sort(function (a, b) { return b.lead.ts - a.lead.ts; });
+    return out;
+  }
+
+  function topStories() {
+    var seen = {};
+    return state.items
+      .filter(function (i) { return Date.now() - i.ts < 6 * HOUR; })
+      .sort(function (a, b) { return (b.impact || 0) - (a.impact || 0) || b.ts - a.ts; })
+      .filter(function (i) { var k = i.storyId || i.id; if (seen[k]) return false; seen[k] = true; return true; })
+      .slice(0, 6);
+  }
+
   // Most immediate items: urgent ones from the last hour, or the newest urgent ones if it is quiet.
   function breakingList() {
     var urgent = state.items.filter(function (i) { return i.breaking; });
@@ -123,7 +171,7 @@
   }
 
   function addItem(item, live) {
-    if (!item || !item.id || state.byId[item.id]) return;
+    if (!item || !item.id || state.byId[item.id]) return false;
     state.byId[item.id] = item;
     state.items.push(item);
     state.items.sort(function (a, b) { return b.ts - a.ts; });
@@ -135,12 +183,16 @@
       var hit = keywordHits(item).length > 0;
       if ((hit && state.sound) || state.soundAll) beep(hit);
     }
+    return true;
   }
 
   // ---------- routing ----------
   function route() {
-    var v = (location.hash || '#home').slice(1);
-    if (VIEWS.indexOf(v) === -1) v = 'home';
+    var raw = (location.hash || '#home').slice(1);
+    // "#n-<id>" is a shared link to one story.
+    if (raw.indexOf('n-') === 0) { state.pendingSelect = raw.slice(2); raw = 'news'; }
+    if (raw === 'terminal') raw = 'news';
+    var v = VIEWS.indexOf(raw) === -1 ? 'home' : raw;
     state.view = v;
     VIEWS.forEach(function (name) { $('view-' + name).hidden = name !== v; });
     document.querySelectorAll('.tabs a').forEach(function (a) {
@@ -149,16 +201,35 @@
       if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
     render();
-    if (v === 'breaking') openRoom(state.room);
+    if (v === 'news') openPending();
+    if (v === 'breaking') openRoom(state.room); else closeChatStream();
     window.scrollTo(0, 0);
     // Radar and Markets live in their own files and start or stop on this signal.
     document.dispatchEvent(new CustomEvent('nt:view', { detail: v }));
   }
 
+  function openPending() {
+    if (!state.pendingSelect || !state.loaded) return;
+    var id = state.pendingSelect;
+    state.pendingSelect = null;
+    if (state.byId[id]) { select(id); return; }
+    // A shared link can point at a story that has already left the live feed.
+    fetch('/api/item?id=' + encodeURIComponent(id)).then(function (r) { return r.json(); }).then(function (d) {
+      if (!d.item) throw new Error('gone');
+      addItem(d.item, false);
+      if (state.view === 'news') { renderFeed(); select(id); }
+    }).catch(function () {
+      var n = $('notice');
+      n.hidden = false;
+      n.textContent = 'That story is no longer available. Here is the latest instead.';
+      setTimeout(function () { n.hidden = true; }, 8000);
+    });
+  }
+
   function render() {
     renderNav();
     if (state.view === 'home') renderHome();
-    if (state.view === 'terminal') { renderKinds(); renderFeed(); }
+    if (state.view === 'news') { renderKinds(); renderSources(); renderFeed(); renderTop(); }
     if (state.view === 'breaking') renderRooms();
   }
 
@@ -176,11 +247,11 @@
     KINDS.slice(1).forEach(function (k) {
       var n = state.items.filter(function (i) { return i.topic === k.id; }).length;
       var a = el('a', 'kind k-' + k.id);
-      a.href = '#terminal';
+      a.href = '#news';
       a.appendChild(iconBox(k.id));
       a.appendChild(el('span', null, k.label));
       a.appendChild(el('span', 'n', String(n)));
-      a.addEventListener('click', function () { state.kind = k.id; });
+      a.addEventListener('click', function () { state.kind = k.id; state.shown = PAGE; });
       cats.appendChild(a);
     });
 
@@ -240,7 +311,7 @@
     var hl = null;
     if (type === 'news') {
       var mast = el('span', 'mast');
-      mast.appendChild(el('span', null, KIND_NAME[it.topic] || 'News'));
+      mast.appendChild(el('span', null, topicName(it)));
       mast.appendChild(el('span', null, it.source));
       c.appendChild(mast);
       hl = el('span', 'hl', it.text);
@@ -250,11 +321,7 @@
       c.appendChild(lines);
     } else if (type === 'ink') {
       if (n === 0) c.className += ' t-accent';
-      c.appendChild(el('span', 'kick', (KIND_NAME[it.topic] || 'News') + ' · ' + it.source));
-      hl = el('span', 'hl', it.text);
-      c.appendChild(hl);
-    } else if (type === 'strip') {
-      c.appendChild(el('span', 'stamp', clock(it.ts) + '  ' + it.source));
+      c.appendChild(el('span', 'kick', topicName(it) + ' · ' + it.source));
       hl = el('span', 'hl', it.text);
       c.appendChild(hl);
     } else if (type === 'halftone') {
@@ -270,7 +337,6 @@
   // The collage frames the hero: clippings sit around the edge, the middle stays clear.
   // It shows the highest-impact headlines in the feed, biggest stories on the bold clippings.
   function buildCollage(box) {
-    state.collageAt = Date.now();
     state.clipSlots = [];
     state.clipNext = 0;
     box.textContent = '';
@@ -311,7 +377,7 @@
     slot.node.classList.add('paste');
   }
 
-  // ---------- terminal: categories + feed ----------
+  // ---------- news: filters ----------
   function renderKinds() {
     var box = $('kinds');
     box.textContent = '';
@@ -324,76 +390,229 @@
       b.appendChild(iconBox(k.id));
       b.appendChild(el('span', null, k.label));
       b.appendChild(el('span', 'n', String(n)));
-      b.addEventListener('click', function () { state.kind = k.id; renderKinds(); renderFeed(); });
+      b.addEventListener('click', function () { state.kind = k.id; state.shown = PAGE; renderKinds(); renderFeed(); });
       box.appendChild(b);
-      if (on) $('feedTitle').textContent = k.title;
     });
   }
 
-  function itemMeta(it, withLag) {
+  function renderSources() {
+    var names = {};
+    state.items.forEach(function (i) { names[i.source] = true; });
+    var list = Object.keys(names).sort(function (a, b) { return a.localeCompare(b); });
+    var sel = $('srcSel');
+    if (sel.options.length !== list.length + 1) {
+      sel.textContent = '';
+      var all = el('option', null, 'All sources');
+      all.value = '';
+      sel.appendChild(all);
+      list.forEach(function (n) { var o = el('option', null, n); o.value = n; sel.appendChild(o); });
+    }
+    sel.value = state.source;
+  }
+
+  function renderToggles() {
+    [['onlyBreaking', state.onlyBreaking], ['onlySaved', state.onlySaved], ['density', state.compact]].forEach(function (t) {
+      $(t[0]).setAttribute('aria-pressed', String(t[1]));
+      $(t[0]).classList.toggle('on', t[1]);
+    });
+    $('savedCount').textContent = state.saved.length ? String(state.saved.length) : '';
+    document.body.classList.toggle('compact', state.compact);
+  }
+
+  // ---------- news: feed ----------
+  function storyRow(s) {
+    var it = s.lead;
+    var row = el('div', 'item k-' + it.topic + (it.id === state.selected ? ' on' : '') + (state.fresh[it.id] ? ' fresh' : ''));
+    row.dataset.id = it.id;
+    var b = el('button', 'itemMain');
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(it.id === state.selected));
+    b.appendChild(iconBox(it.topic));
+    var body = el('span', 'body');
     var meta = el('span', 'meta');
-    meta.appendChild(el('span', 'kindName', KIND_NAME[it.topic] || 'News'));
+    meta.appendChild(el('span', 'kindName', topicName(it)));
     meta.appendChild(el('span', 'strong', it.source));
-    meta.appendChild(el('span', 'mono', clock(it.ts)));
-    if (withLag) meta.appendChild(el('span', 'lag', lag(it)));
-    return meta;
+    var when = el('span', 'mono when', ago(it.ts));
+    when.title = fullTime(it.ts);
+    when.dataset.ts = it.ts;
+    meta.appendChild(when);
+    var l = lag(it);
+    if (l) { var lg = el('span', 'lag', l); lg.title = 'Arrived this long after it was published'; meta.appendChild(lg); }
+    body.appendChild(meta);
+    body.appendChild(el('span', 'text', it.text));
+    var pills = el('span', 'pills');
+    if (it.breaking && Date.now() - it.ts < HOUR) pills.appendChild(el('span', 'pill warn', 'Breaking'));
+    it.cashtags.forEach(function (c) { pills.appendChild(el('span', 'pill', '$' + c)); });
+    if (it.kind === 'listing') pills.appendChild(el('span', 'pill quiet', 'Listing'));
+    keywordHits(it).forEach(function (k) { pills.appendChild(el('span', 'pill warn', 'Keyword: ' + k)); });
+    if (s.also.length) pills.appendChild(el('span', 'pill quiet', '+' + s.also.length + (s.also.length === 1 ? ' more source' : ' more sources')));
+    if (state.counts[it.id]) pills.appendChild(el('span', 'pill quiet', state.counts[it.id] + (state.counts[it.id] === 1 ? ' message' : ' messages')));
+    if (pills.childNodes.length) body.appendChild(pills);
+    b.appendChild(body);
+    b.addEventListener('click', function () { select(it.id); });
+    row.appendChild(b);
+
+    var star = el('button', 'star' + (isSaved(it.id) ? ' on' : ''));
+    star.type = 'button';
+    star.setAttribute('aria-pressed', String(isSaved(it.id)));
+    star.setAttribute('aria-label', isSaved(it.id) ? 'Remove from saved' : 'Save story');
+    star.appendChild(icon('star', 18));
+    star.addEventListener('click', function () { toggleSaved(it); renderToggles(); renderFeed(); if (state.selected === it.id) renderDetailActions(it); });
+    row.appendChild(star);
+    return row;
   }
 
   function renderFeed() {
-    var list = visible();
     var box = $('feed');
+    var empty = $('empty');
+    renderToggles();
+    $('feedTitle').textContent = state.onlySaved ? 'Saved stories' : (KINDS.filter(function (k) { return k.id === state.kind; })[0] || KINDS[0]).title;
     box.textContent = '';
-    list.forEach(function (it) {
-      var b = el('button', 'item k-' + it.topic + (it.id === state.selected ? ' on' : '') + (state.fresh[it.id] ? ' fresh' : ''));
-      b.type = 'button';
-      b.setAttribute('aria-pressed', String(it.id === state.selected));
-      b.appendChild(iconBox(it.topic));
-      var body = el('span', 'body');
-      body.appendChild(itemMeta(it, true));
-      body.appendChild(el('span', 'text', it.text));
-      var pills = el('span', 'pills');
-      it.cashtags.forEach(function (c) { pills.appendChild(el('span', 'pill', '$' + c)); });
-      if (it.kind === 'listing') pills.appendChild(el('span', 'pill quiet', 'Listing'));
-      keywordHits(it).forEach(function (k) { pills.appendChild(el('span', 'pill warn', 'Keyword: ' + k)); });
-      if (state.counts[it.id]) pills.appendChild(el('span', 'pill quiet', state.counts[it.id] + (state.counts[it.id] === 1 ? ' message' : ' messages')));
-      if (pills.childNodes.length) body.appendChild(pills);
-      b.appendChild(body);
-      b.addEventListener('click', function () { select(it.id); });
-      box.appendChild(b);
-    });
+    state.queued = 0;
+    $('newPill').hidden = true;
+
+    if (!state.loaded && !state.onlySaved) {
+      empty.hidden = true;
+      $('more').hidden = true;
+      $('count').textContent = '';
+      if (state.failed) { empty.hidden = false; empty.textContent = 'Can\'t reach the server. Trying again…'; return; }
+      for (var i = 0; i < 6; i++) box.appendChild(el('div', 'item skeleton'));
+      return;
+    }
+
+    var list = stories();
+    list.slice(0, state.shown).forEach(function (s) { box.appendChild(storyRow(s)); });
     state.fresh = {};
-    $('empty').hidden = list.length > 0;
-    $('count').textContent = list.length + (list.length === 1 ? ' item' : ' items');
+    $('more').hidden = list.length <= state.shown;
+    empty.hidden = list.length > 0;
+    if (!list.length) {
+      var filtered = state.kind !== 'all' || state.query || state.source || state.onlyBreaking;
+      empty.textContent = state.onlySaved ? 'Nothing saved yet. Tap the star on a story to keep it here.'
+        : filtered ? 'No stories match these filters.' : 'No stories yet. They appear here the moment they arrive.';
+    }
+    $('count').textContent = list.length + (list.length === 1 ? ' story' : ' stories');
   }
 
-  // ---------- terminal: detail + token matches ----------
+  // New stories do not shove the page while someone is reading further down:
+  // they wait behind a "new stories" button until asked for.
+  function onLiveItem(it) {
+    if (state.view !== 'news') return;
+    renderKinds();
+    renderTop();
+    if (!passes(it) || state.onlySaved) return;
+    var top = $('feed').getBoundingClientRect().top;
+    if (top < -200) {
+      state.queued += 1;
+      var pill = $('newPill');
+      pill.hidden = false;
+      pill.textContent = state.queued + (state.queued === 1 ? ' new story' : ' new stories') + ' ↑';
+      return;
+    }
+    renderFeed();
+  }
+
+  function renderTop() {
+    var list = topStories();
+    var box = $('topList');
+    box.textContent = '';
+    $('topEmpty').hidden = list.length > 0;
+    list.forEach(function (it) {
+      var li = el('li');
+      var b = el('button', 'topItem k-' + it.topic);
+      b.type = 'button';
+      var body = el('span', 'body');
+      var meta = el('span', 'meta');
+      meta.appendChild(el('span', 'kindName', topicName(it)));
+      meta.appendChild(el('span', null, it.source));
+      meta.appendChild(el('span', 'mono', ago(it.ts)));
+      body.appendChild(meta);
+      body.appendChild(el('span', 'text', it.text));
+      b.appendChild(body);
+      b.addEventListener('click', function () { select(it.id); });
+      li.appendChild(b);
+      box.appendChild(li);
+    });
+  }
+
+  // ---------- news: story detail + token matches ----------
+  function findStory(id) {
+    var it = state.byId[id] || state.saved.filter(function (s) { return s.id === id; })[0];
+    if (!it) return null;
+    var key = it.storyId || it.id;
+    var all = state.items.filter(function (x) { return (x.storyId || x.id) === key; });
+    if (all.indexOf(it) === -1) all.push(it);
+    all.sort(function (a, b) { return a.ts - b.ts; });
+    return { item: it, all: all };
+  }
+
+  function renderDetailActions(it) {
+    $('dSave').textContent = isSaved(it.id) ? 'Saved' : 'Save';
+    $('dShare').textContent = 'Copy link';
+  }
+
   function select(id) {
-    var it = state.byId[id];
-    if (!it) return;
+    var story = findStory(id);
+    if (!story) return;
+    var it = story.item;
     state.selected = id;
     state.tokens = [];
     state.token = null;
     state.activeTerm = null;
-    renderFeed();
-    $('detailEmpty').hidden = true;
+    document.querySelectorAll('#feed .item').forEach(function (n) {
+      var on = n.dataset.id === id;
+      n.classList.toggle('on', on);
+      var main = n.querySelector('.itemMain');
+      if (main) main.setAttribute('aria-pressed', String(on));
+    });
+    $('top').hidden = true;
     $('detail').hidden = false;
-    $('dTime').textContent = clock(it.ts);
+    $('dTopic').textContent = topicName(it);
+    $('dTopic').parentNode.className = 'meta k-' + it.topic;
     $('dSource').textContent = it.source;
+    $('dTime').textContent = clock(it.ts);
+    $('dTime').title = fullTime(it.ts);
     $('dText').textContent = it.text;
     var link = $('dLink');
     var u = safeUrl(it.url);
     link.hidden = !u;
     if (u) link.href = u; else link.removeAttribute('href');
+    renderDetailActions(it);
+
+    var also = $('dAlso');
+    var others = story.all.filter(function (x) { return x.id !== it.id; });
+    also.hidden = !others.length;
+    also.textContent = '';
+    if (others.length) {
+      also.appendChild(el('span', 'eyebrow', 'Also reported by'));
+      others.forEach(function (o) {
+        var ou = safeUrl(o.url);
+        var row = ou ? el('a', 'alsoRow') : el('span', 'alsoRow');
+        if (ou) { row.href = ou; row.target = '_blank'; row.rel = 'noopener noreferrer'; }
+        row.appendChild(el('b', null, o.source));
+        row.appendChild(el('span', 'mono muted', clock(o.ts)));
+        row.appendChild(el('span', 'alsoText', o.text));
+        also.appendChild(row);
+      });
+    }
+
     $('term').value = '';
     renderTerms(it);
     if (it.cashtags.length) fetchMatches(it, null);
-    else { renderTokens(); showMatchState('No ticker in this item. Pick a word above or search for one.'); }
+    else { renderTokens(); showMatchState('No ticker in this story. Pick a word above or search for one.'); }
+  }
+
+  function closeDetail() {
+    state.selected = null;
+    $('detail').hidden = true;
+    $('top').hidden = false;
+    document.querySelectorAll('#feed .item.on').forEach(function (n) { n.classList.remove('on'); });
+    renderTop();
   }
 
   function renderTerms(it) {
     var box = $('terms');
     box.textContent = '';
-    it.cashtags.map(function (c) { return '$' + c; }).concat(it.terms).forEach(function (t) {
+    it.cashtags.map(function (c) { return '$' + c; }).concat(it.terms || []).forEach(function (t) {
       var raw = t.replace(/^\$/, '');
       var b = el('button', 'chip' + (state.activeTerm === raw ? ' on' : ''), t);
       b.type = 'button';
@@ -408,6 +627,8 @@
     s.textContent = msg || '';
   }
 
+  // The server's answer per term is the same for everyone (so it caches well); what is
+  // specific to this story, whether a token appeared after it, is worked out here.
   function fetchMatches(it, term) {
     var req = ++state.matchReq;
     state.activeTerm = term;
@@ -416,18 +637,31 @@
     renderTerms(it);
     renderTokens();
     showMatchState('Searching tokens…');
-    var url = '/api/matches?itemId=' + encodeURIComponent(it.id) + (term ? '&q=' + encodeURIComponent(term) : '');
-    fetch(url).then(function (r) { return r.json(); }).then(function (data) {
+    var terms = term ? [term] : it.cashtags.slice(0, 4);
+    Promise.all(terms.map(function (t) {
+      return fetch('/api/tokens?q=' + encodeURIComponent(t)).then(function (r) { return r.json(); }).catch(function () { return { tokens: [], error: 'offline' }; });
+    })).then(function (results) {
       if (req !== state.matchReq) return;
-      state.tokens = data.tokens || [];
+      var seen = {}, all = [], err = null;
+      results.forEach(function (d) {
+        if (d.error) err = d.error;
+        (d.tokens || []).forEach(function (t) {
+          if (seen[t.address]) return;
+          seen[t.address] = true;
+          var after = t.createdAt != null && t.createdAt > it.ts;
+          all.push(Object.assign({}, t, {
+            createdAfterPost: after,
+            secondsAfterPost: after ? Math.round((t.createdAt - it.ts) / 1000) : null,
+            ageSec: t.createdAt != null ? Math.max(0, Math.round((Date.now() - t.createdAt) / 1000)) : null
+          }));
+        });
+      });
+      all.sort(function (a, b) { return Number(a.createdAfterPost) - Number(b.createdAfterPost) || b.liquidityUsd - a.liquidityUsd; });
+      state.tokens = all.slice(0, 8);
       state.token = state.tokens.length ? state.tokens[0].address : null;
-      if (data.error && !state.tokens.length) showMatchState('Token search is unavailable right now (' + data.error + ').');
-      else if (!state.tokens.length) showMatchState('No Solana tokens match ' + (data.terms || []).join(', ') + '.');
+      if (!state.tokens.length) showMatchState(err ? 'Token search is unavailable right now.' : 'No Solana tokens match ' + terms.join(', ') + '.');
       else showMatchState('');
       renderTokens();
-    }).catch(function () {
-      if (req !== state.matchReq) return;
-      showMatchState('Token search is unavailable right now.');
     });
   }
 
@@ -457,8 +691,8 @@
       });
       b.appendChild(stats);
       var pills = el('span', 'pills');
-      if (t.createdAfterPost) pills.appendChild(el('span', 'pill warn', '⚠ Created ' + dur(t.secondsAfterPost) + ' after this item'));
-      else if (t.createdAt) pills.appendChild(el('span', 'pill', 'Existed before this item'));
+      if (t.createdAfterPost) pills.appendChild(el('span', 'pill warn', '⚠ Created ' + dur(t.secondsAfterPost) + ' after this story'));
+      else if (t.createdAt) pills.appendChild(el('span', 'pill', 'Existed before this story'));
       if (t.lowLiquidity) pills.appendChild(el('span', 'pill warn', 'Low liquidity'));
       b.appendChild(pills);
       b.addEventListener('click', function () { state.token = t.address; renderTokens(); });
@@ -481,8 +715,7 @@
   function copyAddress() {
     var tok = currentToken();
     if (!tok) return;
-    var done = function () { $('copy').textContent = 'Copied'; setTimeout(function () { $('copy').textContent = 'Copy address'; }, 1200); };
-    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(tok.address).then(done, function () {});
+    copyText(tok.address, function () { $('copy').textContent = 'Copied'; setTimeout(function () { $('copy').textContent = 'Copy address'; }, 1200); });
   }
 
   // ---------- breaking: rooms + chat ----------
@@ -521,7 +754,7 @@
       b.appendChild(iconBox(it.topic));
       var body = el('span', 'body');
       var meta = el('span', 'meta');
-      meta.appendChild(el('span', 'kindName', KIND_NAME[it.topic] || 'News'));
+      meta.appendChild(el('span', 'kindName', topicName(it)));
       meta.appendChild(el('span', 'strong', it.source));
       meta.appendChild(el('span', 'mono', ago(it.ts)));
       body.appendChild(meta);
@@ -539,21 +772,41 @@
     if (!list.length) box.appendChild(el('p', 'emptyBox', 'Nothing urgent yet. Items land here the moment they arrive.'));
   }
 
+  // Chat is streamed per room, and only while that room is open on screen.
+  var chatStream = null;
+  function closeChatStream() { if (chatStream) { chatStream.close(); chatStream = null; } }
+  function openChatStream(room) {
+    closeChatStream();
+    chatStream = new EventSource('/api/chat/stream?room=' + encodeURIComponent(room));
+    chatStream.addEventListener('chat', function (e) {
+      try { onChat(JSON.parse(e.data)); } catch (err) { /* ignore malformed */ }
+    });
+    // After a dropped connection, fetch whatever was said in the meantime.
+    var dropped = false;
+    chatStream.onerror = function () { dropped = true; };
+    chatStream.onopen = function () { if (dropped && state.room === room) { dropped = false; loadRoom(room); } };
+  }
+  function loadRoom(room) {
+    fetch('/api/chat?room=' + encodeURIComponent(room)).then(function (r) { return r.json(); }).then(function (data) {
+      state.msgs[room] = data.messages || [];
+      state.msgs[room].forEach(function (m) { state.seenMsg[m.id] = true; });
+      state.counts = data.counts || state.counts;
+      if (state.room === room && state.view === 'breaking') { renderMsgs(); renderRooms(); }
+    }).catch(function () {});
+  }
+
   function openRoom(room) {
     if (room !== 'general' && !state.byId[room]) room = 'general';
     state.room = room;
     var it = state.byId[room];
-    $('roomTag').textContent = it ? (KIND_NAME[it.topic] || 'News') + ' · ' + it.source + ' · ' + clock(it.ts) : 'General room';
+    $('roomTag').textContent = it ? topicName(it) + ' · ' + it.source + ' · ' + clock(it.ts) : 'General room';
     $('roomTitle').textContent = it ? it.text : 'Everything breaking';
     $('roomTokens').hidden = !it;
     $('chatError').textContent = '';
     renderRooms();
     renderMsgs();
-    fetch('/api/chat?room=' + encodeURIComponent(room)).then(function (r) { return r.json(); }).then(function (data) {
-      state.msgs[room] = data.messages || [];
-      state.counts = data.counts || state.counts;
-      if (state.room === room) { renderMsgs(); renderRooms(); }
-    }).catch(function () {});
+    loadRoom(room);
+    openChatStream(room);
   }
 
   function renderMsgs() {
@@ -576,11 +829,8 @@
   function onChat(m) {
     if (!m || !m.room || state.seenMsg[m.id]) return;
     state.seenMsg[m.id] = true;
-    var list = state.msgs[m.room];
-    // A message already in a fetched list has been counted by that fetch.
-    if (list && list.some(function (x) { return x.id === m.id; })) return;
     state.counts[m.room] = (state.counts[m.room] || 0) + 1;
-    if (list) list.push(m);
+    if (state.msgs[m.room]) state.msgs[m.room].push(m);
     if (state.view === 'breaking') {
       renderRooms();
       if (m.room === state.room) renderMsgs();
@@ -641,7 +891,14 @@
   }
 
   // ---------- wiring ----------
-  $('q').addEventListener('input', function (e) { state.query = e.target.value.trim(); renderFeed(); });
+  $('q').addEventListener('input', function (e) { state.query = e.target.value.trim(); state.shown = PAGE; renderFeed(); });
+  $('srcSel').addEventListener('change', function (e) { state.source = e.target.value; state.shown = PAGE; renderFeed(); });
+  $('onlyBreaking').addEventListener('click', function () { state.onlyBreaking = !state.onlyBreaking; state.shown = PAGE; renderFeed(); });
+  $('onlySaved').addEventListener('click', function () { state.onlySaved = !state.onlySaved; state.shown = PAGE; renderFeed(); });
+  $('density').addEventListener('click', function () { state.compact = !state.compact; save('nt.compact', state.compact); renderToggles(); });
+  $('more').addEventListener('click', function () { state.shown += PAGE; renderFeed(); });
+  $('newPill').addEventListener('click', function () { renderFeed(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
+  $('back').addEventListener('click', closeDetail);
   $('alertsBtn').addEventListener('click', function () {
     var open = $('alerts').hidden;
     $('alerts').hidden = !open;
@@ -657,39 +914,51 @@
   $('termForm').addEventListener('submit', function (e) {
     e.preventDefault();
     var v = $('term').value.trim().replace(/^\$/, '');
-    var it = state.byId[state.selected];
-    if (v && it) fetchMatches(it, v);
+    var story = state.selected && findStory(state.selected);
+    if (v && story) fetchMatches(story.item, v);
   });
   $('copy').addEventListener('click', copyAddress);
+  $('dSave').addEventListener('click', function () {
+    var story = state.selected && findStory(state.selected);
+    if (!story) return;
+    toggleSaved(story.item);
+    renderFeed();
+    renderDetailActions(story.item);
+  });
+  $('dShare').addEventListener('click', function () {
+    if (!state.selected) return;
+    copyText(location.origin + location.pathname + '#n-' + state.selected, function () { $('dShare').textContent = 'Link copied'; });
+  });
   $('chatForm').addEventListener('submit', sendChat);
   $('handle').value = state.name;
-  // "Discuss in Breaking" carries the selected item across; "See matching tokens" carries it back.
-  $('dTalk').addEventListener('click', function () { if (state.selected) state.room = state.selected; });
-  $('roomTokens').addEventListener('click', function () {
-    var id = state.room;
-    setTimeout(function () { if (state.byId[id]) select(id); }, 0);
-  });
+  // "Discuss in Breaking" carries the selected story across; "See matching tokens" carries it back.
+  $('dTalk').addEventListener('click', function () { if (state.selected && state.byId[state.selected]) state.room = state.selected; });
+  $('roomTokens').addEventListener('click', function () { state.pendingSelect = state.room; });
   $('sound').checked = state.sound;
   $('soundAll').checked = state.soundAll;
   $('sound').addEventListener('change', function (e) { state.sound = e.target.checked; save('nt.sound', state.sound); if (state.sound) beep(true); });
   $('soundAll').addEventListener('change', function (e) { state.soundAll = e.target.checked; save('nt.soundAll', state.soundAll); if (state.soundAll) beep(false); });
 
   document.addEventListener('keydown', function (e) {
-    var typing = /^(INPUT|TEXTAREA)$/.test(e.target.tagName);
+    var typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
     if (typing) { if (e.key === 'Escape') e.target.blur(); return; }
-    if (state.view !== 'terminal' || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (state.view !== 'news' || e.metaKey || e.ctrlKey || e.altKey) return;
     var k = e.key.toLowerCase();
     if (k === '/') { e.preventDefault(); $('q').focus(); return; }
+    if (k === 'escape' && state.selected) { closeDetail(); return; }
     if (k === 'j' || k === 'k') {
-      var list = visible();
+      var list = stories().slice(0, state.shown);
       if (!list.length) return;
-      var i = list.findIndex(function (x) { return x.id === state.selected; });
+      var i = list.findIndex(function (s) { return s.lead.id === state.selected; });
       var next = i === -1 ? 0 : Math.min(list.length - 1, Math.max(0, i + (k === 'j' ? 1 : -1)));
-      select(list[next].id);
-      var node = document.querySelector('.item.on');
+      select(list[next].lead.id);
+      var node = document.querySelector('#feed .item.on');
       if (node) node.scrollIntoView({ block: 'nearest' });
       return;
     }
+    var story = state.selected && findStory(state.selected);
+    if (k === 's' && story) { toggleSaved(story.item); renderFeed(); renderDetailActions(story.item); return; }
+    if (k === 'o' && story) { var ou = safeUrl(story.item.url); if (ou) window.open(ou, '_blank', 'noopener'); return; }
     if (k === 'c') { copyAddress(); return; }
     if (k === 'enter' && e.target.tagName !== 'BUTTON' && e.target.tagName !== 'A') {
       var tok = currentToken();
@@ -706,40 +975,102 @@
     c.style.setProperty('--py', ((e.clientY / window.innerHeight - 0.5) * -28).toFixed(1) + 'px');
   });
 
-  function setLive(on) {
-    $('live').className = 'live' + (on ? '' : ' off');
-    $('liveText').textContent = on ? 'Live' : 'Reconnecting';
+  // ---------- connection ----------
+  // Live push first. If the stream cannot be held (network, or the server is at its
+  // connection limit) the page quietly polls the cached feed instead.
+  var poll = null, streamFails = 0;
+  function setLive(mode) {
+    $('live').className = 'live' + (mode === 'live' ? '' : ' off');
+    $('liveText').textContent = mode === 'live' ? 'Live' : mode === 'poll' ? 'Live (polling)' : 'Reconnecting';
+    $('offline').hidden = mode !== 'down';
+  }
+  function loadFeed(live) {
+    return fetch('/api/feed').then(function (r) { if (!r.ok) throw new Error('feed'); return r.json(); }).then(function (data) {
+      $('demoBadge').hidden = !data.demo;
+      $('demoRibbon').hidden = !data.demo;
+      var fresh = [];
+      (data.items || []).forEach(function (it) { if (addItem(it, live && state.loaded)) fresh.push(it); });
+      var first = !state.loaded;
+      state.loaded = true;
+      state.failed = false;
+      if (first) { render(); openPending(); }
+      else if (fresh.length) { renderNav(); fresh.forEach(onLiveItem); if (state.view !== 'news') render(); }
+      return true;
+    }).catch(function () {
+      if (!state.loaded) { state.failed = true; if (state.view === 'news') renderFeed(); }
+      return false;
+    });
+  }
+  function startPolling() {
+    if (poll) return;
+    poll = setInterval(function () { loadFeed(true).then(function (ok) { setLive(ok ? 'poll' : 'down'); }); }, 3000);
+  }
+  function stopPolling() { clearInterval(poll); poll = null; }
+
+  var es = null;
+  function disconnectStream() {
+    if (es) { es.close(); es = null; }
+    stopPolling();
+  }
+  function connectStream() {
+    disconnectStream();
+    es = new EventSource('/api/stream');
+    es.onopen = function () {
+      // Anything published while disconnected is picked up by one catch-up fetch.
+      if (streamFails) loadFeed(true);
+      streamFails = 0;
+      stopPolling();
+      setLive('live');
+    };
+    es.onerror = function () {
+      streamFails += 1;
+      if (streamFails >= 2) startPolling(); else setLive('down');
+    };
+    es.addEventListener('item', function (e) {
+      var it;
+      try { it = JSON.parse(e.data); } catch (err) { return; }
+      if (!addItem(it, true)) return;
+      renderNav();
+      if (state.view === 'home' && !it.backfill) pasteClip(it);
+      if (state.view === 'home') renderHome();
+      if (state.view === 'breaking') renderRooms();
+      onLiveItem(it);
+    });
   }
 
   function start() {
     renderKeywords();
+    renderToggles();
     window.addEventListener('hashchange', route);
     route();
-    fetch('/api/feed').then(function (r) { return r.json(); }).then(function (data) {
-      $('demoBadge').hidden = !data.demo;
-      (data.items || []).forEach(function (it) { addItem(it, false); });
-      render();
-    }).catch(function () {});
+    loadFeed(false);
     fetch('/api/chat?room=general').then(function (r) { return r.json(); }).then(function (data) {
       state.msgs.general = data.messages || [];
+      state.msgs.general.forEach(function (m) { state.seenMsg[m.id] = true; });
       state.counts = data.counts || {};
-      render();
-      if (state.view === 'breaking' && state.room === 'general') renderMsgs();
+      if (state.view === 'breaking') { renderRooms(); if (state.room === 'general') renderMsgs(); }
     }).catch(function () {});
-    var es = new EventSource('/api/stream');
-    es.onopen = function () { setLive(true); };
-    es.onerror = function () { setLive(false); };
-    es.addEventListener('item', function (e) {
-      var it;
-      try { it = JSON.parse(e.data); addItem(it, true); } catch (err) { return; }
-      if (state.view === 'home' && !it.backfill) pasteClip(it);
-      render();
+
+    connectStream();
+    // A tab in the background holds no connections: browsers allow only a handful per
+    // site, and at scale idle tabs would otherwise occupy the servers. On return the
+    // page catches up with one fetch and reconnects.
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) { disconnectStream(); closeChatStream(); return; }
+      loadFeed(true);
+      connectStream();
+      if (state.view === 'breaking') { loadRoom(state.room); openChatStream(state.room); }
     });
-    es.addEventListener('chat', function (e) {
-      try { onChat(JSON.parse(e.data)); } catch (err) { /* ignore malformed */ }
-    });
-    // Keeps "2m ago" labels and the hourly counts honest.
-    setInterval(function () { renderNav(); if (state.view === 'breaking') renderRooms(); }, 30000);
+    // Keeps "2m ago" labels and the hourly counts honest without rebuilding the list.
+    setInterval(function () {
+      renderNav();
+      document.querySelectorAll('.when[data-ts]').forEach(function (n) { n.textContent = ago(Number(n.dataset.ts)); });
+      if (state.view === 'breaking') {
+        // Message counts for the other rooms, which this page is not streaming.
+        fetch('/api/chat/counts').then(function (r) { return r.json(); }).then(function (d) { state.counts = d.counts || state.counts; renderRooms(); }).catch(function () { renderRooms(); });
+      }
+      if (state.view === 'news' && !state.selected) renderTop();
+    }, 30000);
   }
   start();
 })();

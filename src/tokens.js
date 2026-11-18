@@ -59,20 +59,36 @@ export function rankPairs(pairs, term, postTs, nowTs) {
   return out;
 }
 
-export function createTokenMatcher({ fetchImpl = fetch, ttlMs = 20000, now = Date.now, timeoutMs = 6000 } = {}) {
+export function createTokenMatcher({ fetchImpl = fetch, ttlMs = 15000, now = Date.now, timeoutMs = 6000 } = {}) {
   const cache = new Map();
+  const inflight = new Map();
 
-  async function search(term) {
+  // One upstream call per term per ttl, however many people ask at once.
+  async function pairsFor(term) {
     const key = term.toLowerCase();
     const hit = cache.get(key);
     if (hit && now() - hit.at < ttlMs) return hit.pairs;
-    const res = await fetchImpl(SEARCH + encodeURIComponent(term), { signal: AbortSignal.timeout(timeoutMs) });
-    if (!res.ok) throw new Error('Token search failed: HTTP ' + res.status);
-    const body = await res.json();
-    const pairs = Array.isArray(body?.pairs) ? body.pairs : [];
-    cache.set(key, { at: now(), pairs });
-    if (cache.size > 500) cache.delete(cache.keys().next().value);
-    return pairs;
+    if (inflight.has(key)) return inflight.get(key);
+    const run = (async () => {
+      const res = await fetchImpl(SEARCH + encodeURIComponent(term), { signal: AbortSignal.timeout(timeoutMs) });
+      if (!res.ok) throw new Error('Token search failed: HTTP ' + res.status);
+      const body = await res.json();
+      const pairs = Array.isArray(body?.pairs) ? body.pairs : [];
+      cache.set(key, { at: now(), pairs });
+      if (cache.size > 2000) cache.delete(cache.keys().next().value);
+      return pairs;
+    })().finally(() => inflight.delete(key));
+    inflight.set(key, run);
+    return run;
+  }
+
+  // Tokens for one term, deepest liquidity first. The same answer suits every reader, so it
+  // can be cached by a CDN; the browser adds the "created after this post" flag itself.
+  async function search(term, limit = 8) {
+    const t = String(term).trim();
+    return rankPairs(await pairsFor(t), t, null, now())
+      .sort((a, b) => b.liquidityUsd - a.liquidityUsd)
+      .slice(0, limit);
   }
 
   async function match(terms, postTs, limit = 8) {
@@ -80,7 +96,7 @@ export function createTokenMatcher({ fetchImpl = fetch, ttlMs = 20000, now = Dat
     const seen = new Set();
     const all = [];
     const errors = [];
-    const results = await Promise.allSettled(unique.map((t) => search(t)));
+    const results = await Promise.allSettled(unique.map((t) => pairsFor(t)));
     results.forEach((r, i) => {
       if (r.status === 'rejected') return errors.push(String(r.reason?.message || r.reason));
       for (const tok of rankPairs(r.value, unique[i], postTs, now())) {
@@ -93,5 +109,5 @@ export function createTokenMatcher({ fetchImpl = fetch, ttlMs = 20000, now = Dat
     return { tokens: all.slice(0, limit), terms: unique, error: errors.length && !all.length ? errors[0] : null };
   }
 
-  return { match };
+  return { match, search };
 }

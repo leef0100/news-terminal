@@ -18,7 +18,7 @@
   </a>
   <nav class="tabs" aria-label="Sections">
     <a href="#home" data-view="home">Home</a>
-    <a href="#terminal" data-view="terminal">Terminal</a>
+    <a href="#news" data-view="news">News</a>
     <a href="#breaking" data-view="breaking">Breaking <span id="breakingCount" class="count" hidden></span></a>
     <a href="#radar" data-view="radar">Radar</a>
     <a href="#markets" data-view="markets">Markets</a>
@@ -29,6 +29,8 @@
     <button id="walletBtn" type="button" class="btn walletBtn">Connect wallet</button>
   </div>
 </header>
+<p id="demoRibbon" class="ribbon" hidden><b>Demo mode.</b> Every headline, price and position on this site is invented for testing. Start the app with <code>npm start</code> for live data.</p>
+<p id="offline" class="ribbon warn" role="status" hidden>Connection lost. Showing the last stories received; reconnecting…</p>
 
 <!-- HOME -->
 <section id="view-home" class="view home">
@@ -40,7 +42,7 @@
     <h1>News at <em>trading</em> speed.</h1>
     <p class="lede">The biggest stories in crypto, markets, business and tech in one live feed, with the tokens they move and where traders are leaning.</p>
     <div class="cta">
-      <a class="btn primary" href="#terminal">Open the terminal</a>
+      <a class="btn primary" href="#news">Open the news feed</a>
       <a class="btn ghost" href="#breaking">See what's breaking</a>
     </div>
     <div id="homeCats" class="homeCats" aria-label="Browse by category"></div>
@@ -48,20 +50,25 @@
   <div class="ticker" aria-label="Latest headlines"><div id="ticker" class="tickerTrack"></div></div>
 </section>
 
-<!-- TERMINAL -->
-<section id="view-terminal" class="view" hidden>
+<!-- NEWS -->
+<section id="view-news" class="view" hidden>
   <div class="toolbar">
     <div id="kinds" class="kinds" role="group" aria-label="Categories"></div>
-    <div class="tools">
-      <div class="search">
-        <label for="q" class="sr">Filter the feed</label>
-        <input id="q" type="search" placeholder="Filter: ticker, word, source  ( / )" autocomplete="off">
-      </div>
-      <button id="alertsBtn" type="button" class="btn" aria-expanded="false" aria-controls="alerts">
-        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
-        Alerts
-      </button>
+  </div>
+  <div class="filters">
+    <div class="search">
+      <label for="q" class="sr">Search the feed</label>
+      <input id="q" type="search" placeholder="Search headlines, tickers, sources  ( / )" autocomplete="off">
     </div>
+    <label for="srcSel" class="sr">Source</label>
+    <select id="srcSel" class="select"></select>
+    <button id="onlyBreaking" type="button" class="btn toggle" aria-pressed="false">Breaking only</button>
+    <button id="onlySaved" type="button" class="btn toggle" aria-pressed="false">Saved <span id="savedCount" class="n"></span></button>
+    <button id="density" type="button" class="btn toggle" aria-pressed="false">Compact</button>
+    <button id="alertsBtn" type="button" class="btn" aria-expanded="false" aria-controls="alerts">
+      <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+      Alerts
+    </button>
   </div>
   <div id="alerts" class="alerts" hidden>
     <div>
@@ -76,11 +83,11 @@
     <div>
       <h2 class="eyebrow">Sound</h2>
       <label class="check"><input id="sound" type="checkbox"> On keyword hit</label>
-      <label class="check"><input id="soundAll" type="checkbox"> On every new item</label>
+      <label class="check"><input id="soundAll" type="checkbox"> On every new story</label>
     </div>
     <div>
       <h2 class="eyebrow">Keys</h2>
-      <p class="keys"><kbd>J</kbd> <kbd>K</kbd> move · <kbd>C</kbd> copy address · <kbd>Enter</kbd> open token · <kbd>/</kbd> filter</p>
+      <p class="keys"><kbd>J</kbd> <kbd>K</kbd> move · <kbd>S</kbd> save · <kbd>O</kbd> open original · <kbd>C</kbd> copy address · <kbd>/</kbd> search</p>
     </div>
   </div>
 
@@ -90,27 +97,44 @@
         <h1 id="feedTitle">Live feed</h1>
         <span id="count" class="muted"></span>
       </div>
-      <div id="feed" class="stack" aria-live="polite"></div>
-      <p id="empty" class="emptyBox" hidden>Nothing here yet. New items appear as they arrive.</p>
+      <p id="notice" class="emptyBox notice" role="status" hidden></p>
+      <button id="newPill" type="button" class="newPill" hidden></button>
+      <div id="feed" class="stack"></div>
+      <p id="empty" class="emptyBox" hidden></p>
+      <button id="more" type="button" class="btn moreBtn" hidden>Show more</button>
     </main>
 
-    <aside class="detail" aria-label="Selected item">
-      <div id="detailEmpty" class="emptyBox">Select an item to see matching tokens.</div>
+    <aside class="detail" aria-label="Story details">
+      <div id="top" class="stack">
+        <div class="sideHead">
+          <h2>Top stories</h2>
+          <span class="muted small">Biggest in the last 6 hours</span>
+        </div>
+        <ol id="topList" class="topList"></ol>
+        <p id="topEmpty" class="emptyBox" hidden>Top stories appear here once the feed has some.</p>
+      </div>
       <div id="detail" hidden>
+        <button id="back" type="button" class="btn backBtn">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6"></path></svg>
+          Top stories
+        </button>
         <div class="card">
-          <div class="meta"><span id="dTime" class="mono"></span><span id="dSource" class="strong"></span></div>
+          <div class="meta"><span id="dTopic" class="kindName"></span><span id="dSource" class="strong"></span><span id="dTime" class="mono"></span></div>
           <div id="dText" class="dText"></div>
           <div class="row wrap">
             <a id="dLink" class="link" target="_blank" rel="noopener noreferrer" hidden>Open original</a>
             <a id="dTalk" class="link" href="#breaking">Discuss in Breaking</a>
+            <button id="dShare" type="button" class="linkBtn">Copy link</button>
+            <button id="dSave" type="button" class="linkBtn">Save</button>
           </div>
+          <div id="dAlso" class="also" hidden></div>
         </div>
 
         <h2>Matching tokens</h2>
-        <p class="muted small">Tokens that existed before the item come first. Anything created after it is flagged.</p>
+        <p class="muted small">Tokens that existed before the story come first. Anything created after it is flagged.</p>
         <div id="terms" class="chips"></div>
         <form id="termForm" class="row">
-          <label for="term" class="sr">Search tokens for this item</label>
+          <label for="term" class="sr">Search tokens for this story</label>
           <input id="term" type="text" placeholder="Search a ticker or name" maxlength="40" autocomplete="off">
           <button type="submit" class="btn">Search</button>
         </form>
@@ -149,7 +173,7 @@
       <div class="chatHead">
         <span id="roomTag" class="eyebrow">General room</span>
         <div id="roomTitle" class="roomTitle">Everything breaking</div>
-        <a id="roomTokens" class="link" href="#terminal" hidden>See matching tokens</a>
+        <a id="roomTokens" class="link" href="#news" hidden>See matching tokens</a>
       </div>
       <div id="msgs" class="msgs" aria-live="polite"></div>
       <form id="chatForm" class="chatForm">
@@ -210,6 +234,7 @@
           <h2 id="mTitle">Chart</h2>
           <div id="mIntervals" class="seg" role="group" aria-label="Candle size"></div>
         </div>
+        <p id="mLive" class="liveNote"><span class="dot" aria-hidden="true"></span><span id="mLiveText">Connecting…</span></p>
         <div id="mChart" class="chart"></div>
         <p id="mState" class="muted small"></p>
         <p class="muted small">Market data from Hyperliquid's public API. Charts by <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">TradingView Lightweight Charts</a>.</p>

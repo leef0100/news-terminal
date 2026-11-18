@@ -1,7 +1,7 @@
 {
   "name": "halftone",
   "version": "0.1.0",
-  "description": "Real-time news feed for memecoin traders with token matching and copycat flagging",
+  "description": "Live market news for traders: story feed, token matching with copycat flags, breaking-news chat, positioning radar and live markets",
   "type": "module",
   "private": true,
   "engines": {
@@ -10,11 +10,18 @@
   "scripts": {
     "start": "node src/server.js",
     "demo": "node src/server.js --demo",
-    "test": "node --test"
+    "test": "node --test test/*.test.js",
+    "test:e2e": "node test/e2e/run.mjs"
   },
   "dependencies": {
+    "compression": "^1.8.2",
     "express": "^4.21.0",
     "fast-xml-parser": "^4.5.0",
+    "ioredis": "^6.0.0",
     "lightweight-charts": "^4.2.3"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^25.18.1",
+    "ws": "^8.23.0"
   }
 }

@@ -1,8 +1,8 @@
 # Halftone
 
-A real-time news feed for memecoin traders. Each item shows the tickers it mentions, and
-selecting one lists the matching Solana tokens with the real one first and copycats
-(tokens created after the news) flagged.
+Live market news for traders. One feed for crypto, markets, business, technology, macro and
+politics, with the tokens each story moves, the copycats flagged, a room to talk about what
+is breaking, a read on how traders are positioned, and live markets.
 
 ## Run it
 
@@ -10,114 +10,81 @@ Needs Node 20 or newer.
 
 ```
 npm install
-npm run demo     # invented data, works offline: use this to try the UI
-npm start        # live news feeds + live token search
+npm start        # live: real news feeds, real token search, real market data
+npm run demo     # invented data, works offline; the site shows a "Demo mode" banner
 ```
 
-Then open http://localhost:3000. `npm test` runs the tests.
+Open http://localhost:3000. Everything in demo mode is made up, prices included; use
+`npm start` to see the real market.
 
-## Pages
+```
+npm test             # unit and server tests (25), including a two-server Redis cluster
+npm run test:e2e     # full browser test of every page (needs Chrome; set CHROME_PATH)
+```
 
-- **Home**: landing page with a scrapbook collage of newsprint clippings built from the live headlines; new items get pasted on as they arrive. It picks the
-  highest-impact headlines in the feed (ousters, collapses, records, attacks and the like),
-  never invented ones.
-- **Terminal**: the feed, category tabs (Crypto, Markets, Business, Technology, Macro,
-  Politics, World), token matching and quick buy.
-- **Breaking**: the most immediate items (tickers, listings, X posts, urgent headlines from
-  the last hour), each with its own live chat room, plus a general room.
+## What is in it
 
-- **Radar**: how traders are positioned across venues. Long/short split per coin (blended and
-  per venue), a funding-rate heatmap, open interest, the Coinbase premium, and a tape of
-  large Hyperliquid trades.
-- **Markets**: candle chart, order book, recent trades and market stats (mark, oracle,
-  funding, open interest, volume) for any Hyperliquid perpetual.
-- **Wallet connect**: Phantom, Solflare and Backpack on Solana, plus any Ethereum-style
-  wallet that announces itself (MetaMask, Coinbase Wallet, Rabby and others). Connect only:
-  it reads the public address and never requests a signature or a transaction. Because
-  nothing is signed, the address is not proof of ownership.
+| Page | What it does |
+|---|---|
+| **News** | The centrepiece. Live feed sorted into categories. The same story from several outlets is one row. Top stories panel, search, source filter, breaking-only and saved views, compact mode, keyboard control, shareable links. New stories wait behind a button while you read further down. |
+| **Story detail** | Other outlets reporting it, and matching Solana tokens: the one that existed before the story first, anything created after it flagged with how long after, thin pools marked. Copy the address, open the chart, or open the token on pump.fun. |
+| **Breaking** | The most immediate items of the last hour, each with a live chat room, plus a general room. |
+| **Radar** | Long/short split per coin across venues, a funding heatmap, open interest, the Coinbase premium, and large Hyperliquid trades. |
+| **Markets** | Candle chart, order book, trades and stats for any Hyperliquid perpetual, streamed tick by tick from the exchange. |
+| **Wallet** | Connect Phantom, Solflare, Backpack, MetaMask, Coinbase Wallet and other announcing wallets. Connect only: no signature, no transaction. |
+| **Home** | A newsprint collage built from the highest-impact headlines in the live feed. |
 
-## Where the Radar and Markets data comes from
+## Where the data comes from
 
-All of it is public and needs no key, fetched by the server and cached for a few seconds.
-
-| Venue | What is used | Notes |
+| Data | Source | Notes |
 |---|---|---|
-| Binance futures | long/short account ratio, top-trader position ratio, funding, open interest | Not served to some regions, including the US; shows as unavailable there |
-| Bybit | long/short account ratio, funding, open interest | Same regional limits |
-| Hyperliquid | funding, open interest, large trades, plus everything on the Markets page | |
-| Coinbase | spot price, for the Coinbase premium | Spot only, so it has no long/short data |
-| Papertrade | nothing yet | It publishes no public data feed; listed as unavailable |
+| News | RSS feeds listed in `config/sources.json` (crypto outlets, plus WSJ, NYT and FT sections) | Headline, time and link only, never the article. Polled every 20 seconds. |
+| Token matches | DexScreener public search | Solana only. Cached 15 seconds per term. |
+| Live markets | Hyperliquid public stream, straight from the browser | History and a polling fallback come from this server. |
+| Positioning | Binance and Bybit futures, Hyperliquid, Coinbase spot | Binance and Bybit do not serve some regions, the US included, and show as unavailable there. |
 
-Things this does not do: it does not copy Coinglass's heatmaps (their data is licensed; a
-paid Coinglass API key would be the way to add liquidation heatmaps), and the Markets page
-is this app's own design drawn from Hyperliquid's data, not a copy of Hyperliquid's
-interface. Long/short ratios count accounts, not money, and say nothing about who is right.
+Not included, and why: Coinglass heatmaps (their data is licensed; a paid key would add
+liquidation heatmaps), Papertrade (no public data feed), X accounts (needs a paid streaming
+provider; `src/ingest/x.js` is the slot).
 
-## What it does
+## What has and has not been verified
 
-- **Live feed** pushed to the browser as items arrive (no refresh), newest first, with the
-  delay between publication and arrival shown on each live item.
-- **Sources**: news headlines over RSS (crypto outlets plus WSJ, NYT and FT sections), set
-  in `config/sources.json`. Each headline is sorted into a category by keyword, falling
-  back to its feed's own category.
-- **Token matching**: `$TICKER` mentions are searched automatically; any other word can be
-  searched from the item. Results are Solana only, de-duplicated per token, with age,
-  liquidity and market cap.
-- **Copycat flagging**: tokens that existed before the item rank first; tokens created
-  after it carry a warning with how long after. Thin pools get a "Low liquidity" tag.
-- **Quick buy**: copy the contract address, open the chart, or open the token on pump.fun
-  (DexScreener for tokens not launched there). No wallet code and no custody in v1.
-- **Keyword alerts** with optional sound, a feed filter, and keyboard control
-  (`J`/`K` move, `C` copy address, `Enter` open token, `/` filter).
+Verified by tests: every page and interaction in a real browser against demo data; the
+server API; two web servers and an ingest worker sharing one feed and chat through Redis;
+the live-market stream against a stand-in that speaks the exchange's protocol.
 
-## Chat limits to know about
-
-Chat has no accounts and no moderation: anyone can post under any name. Messages are kept
-in memory, so they vanish when the server restarts. Posting is rate-limited per address
-(5 messages per 10 seconds) and messages are capped at 280 characters. Add sign-in,
-moderation and a database before opening this to the public.
-
-## Not yet verified against live services
-
-This was built and tested where outside sites could not be reached, so:
-
-- The feed URLs in `config/sources.json` have not been fetched for real. A feed that fails
-  is logged and skipped; check `http://localhost:3000/api/health` to see each feed's state
-  and fix or remove any that fail.
-- The exchange endpoints (Binance, Bybit, Hyperliquid, Coinbase) are used as their public
-  documentation describes and were tested against data in those shapes, not the live services.
-- Token search uses DexScreener's public search endpoint as documented. It was tested
-  against data in that shape, not against the live service.
+Not yet verified: any call to a real outside service. The feed addresses, DexScreener,
+Hyperliquid, Binance, Bybit and Coinbase are used as their public documentation describes,
+but this was built where those sites could not be reached. On first live run, check
+`http://localhost:3000/api/health` for feeds that fail and fix or remove them.
 
 ## Before a commercial launch
 
-WSJ, NYT and FT publish RSS for reading, and their terms for commercial reuse differ. This
-app keeps only the headline, time and a link out. Check each publisher's terms or license
-a newswire before charging for this or shipping it inside another product.
-
-## Next
-
-1. X accounts: `src/ingest/x.js` is the slot. Needs a streaming data provider and key.
-2. Exchange listing announcements as their own source (currently inferred from headlines).
-3. Macro calendar with scheduled releases.
-4. News pinned on the token chart, and a per-source track record.
-5. In-app swap with a confirm step.
+- **News licensing.** WSJ, NYT and FT publish RSS for reading; their terms for commercial
+  reuse differ. Check them or license a newswire. RSS polling is also slower than a
+  licensed push feed, which is what a product selling speed needs.
+- **Chat.** No accounts, no moderation, no blocking. Add all three before opening it up.
+- **Scale.** See [SCALING.md](SCALING.md) for what is built, what was measured, and what is
+  left on the way to very large audiences.
+- **Not advice.** Positioning and token data describe the market; they do not recommend trades.
 
 ## Layout
 
 ```
 config/sources.json   feeds and poll interval
-src/server.js         web server, API, live stream
-src/ingest/           RSS reader, poller, demo data, X slot
-src/enrich.js         kind, cashtags, search terms
+src/server.js         web server, API, live connections, roles
+src/bus.js            shared state between servers: memory or Redis
+src/store.js          the feed, story grouping
+src/enrich.js         category, tickers, breaking flag, impact score
 src/tokens.js         token search, ranking, copycat flags
-src/chat.js           Breaking-page chat rooms
+src/chat.js           chat rooms
 src/radar.js          cross-exchange positioning snapshot
-src/hyperliquid.js    Hyperliquid market data (book, candles, trades)
-public/               the terminal UI (no build step)
-test/                 tests
+src/hyperliquid.js    market data history and polling fallback
+src/ingest/           RSS reader, poller, demo data, X slot
+public/               the site (plain HTML, CSS and JavaScript, no build step)
+test/                 unit, server, cluster and browser tests
 ```
 
-API: `GET /api/feed`, `GET /api/stream` (Server-Sent Events), `GET /api/matches?itemId=&q=`,
-`GET /api/health`, `GET /api/chat?room=`, `POST /api/chat`,
-`GET /api/radar`, `GET /api/markets`, `GET /api/markets/book|candles|trades?coin=`.
+API: `/api/feed`, `/api/item?id=`, `/api/stream`, `/api/tokens?q=`, `/api/chat`,
+`/api/chat/stream?room=`, `/api/chat/counts`, `/api/radar`, `/api/markets`,
+`/api/markets/book|candles|trades?coin=`, `/api/health`, `/healthz`.

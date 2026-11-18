@@ -1,14 +1,26 @@
-// Markets page: candle chart, order book, trades and market stats from Hyperliquid's public data.
+// Markets page: candle chart, order book, trades and market stats for Hyperliquid perpetuals.
+//
+// Live data comes straight from the exchange's own stream (a WebSocket from this browser to
+// Hyperliquid), so prices tick as they trade and none of it passes through our server.
+// Our server only supplies the candle history and the market list, and a slower polling
+// fallback for when the stream cannot be reached. In demo mode the numbers are invented.
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
   var INTERVALS = ['5m', '15m', '1h', '4h', '1d'];
-  var st = { coin: 'BTC', interval: '15m', markets: [], timers: [], chart: null, candles: null, volume: null, fitted: '' };
+  var STREAM_URL = window.HALFTONE_HL_WS || 'wss://api.hyperliquid.xyz/ws';
+  var st = {
+    coin: 'BTC', interval: '15m', markets: [], demo: false, active: false,
+    timers: [], chart: null, candles: null, volume: null, fitted: '', last: null,
+    ws: null, wsOpen: false, wsRetry: 0, wsTimer: null, ping: null, subs: [], lastMsg: 0, trades: [], got: {}
+  };
   try {
     st.coin = localStorage.getItem('nt.coin') || 'BTC';
     st.interval = localStorage.getItem('nt.interval') || '15m';
   } catch (e) { /* storage unavailable */ }
   if (INTERVALS.indexOf(st.interval) === -1) st.interval = '15m';
+  // The chart library draws UTC; shifting the timestamps makes the axis read in local time.
+  var SHIFT = new Date().getTimezoneOffset() * 60;
 
   function el(tag, cls, text) {
     var n = document.createElement(tag);
@@ -23,11 +35,12 @@
     if (n >= 1e3) return '$' + Math.round(n / 1e3) + 'k';
     return '$' + Math.round(n);
   }
+  // Decimal places that suit the size of a price: 83,201.5 but 0.14231.
+  function decimals(n) { return n >= 10000 ? 1 : n >= 100 ? 2 : n >= 1 ? 4 : n >= 0.01 ? 5 : 8; }
   function px(n) {
     if (n == null || !isFinite(n)) return 'n/a';
-    if (n >= 1000) return n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
-    if (n >= 1) return n.toFixed(3);
-    return n.toPrecision(4);
+    var d = decimals(Math.abs(n));
+    return n.toLocaleString('en-US', { minimumFractionDigits: Math.min(d, 2), maximumFractionDigits: d });
   }
   function qty(n) { return n >= 1000 ? n.toLocaleString('en-US', { maximumFractionDigits: 0 }) : n >= 1 ? n.toFixed(2) : n.toPrecision(3); }
   function clock(ts) {
@@ -43,18 +56,13 @@
     });
   }
   function current() { return st.markets.filter(function (m) { return m.coin === st.coin; })[0]; }
-
-  function setCoin(coin) {
-    st.coin = coin;
-    st.fitted = '';
-    try { localStorage.setItem('nt.coin', coin); } catch (e) { /* ignore */ }
-    renderPicker();
-    renderStats();
-    loadCandles();
-    loadBook();
-    loadTrades();
+  function setNote(mode) {
+    var text = { live: 'Streaming live from Hyperliquid', poll: 'Live stream unavailable. Refreshing every few seconds instead.', demo: 'Demo prices. These are invented, not the market.', wait: 'Connecting…' }[mode];
+    $('mLive').className = 'liveNote ' + mode;
+    $('mLiveText').textContent = text;
   }
 
+  // ---------- rendering ----------
   function renderPicker() {
     var box = $('mCoins');
     box.textContent = '';
@@ -64,8 +72,7 @@
       b.type = 'button';
       b.setAttribute('aria-pressed', String(on));
       b.appendChild(el('span', 'tick', m.coin));
-      var ch = el('span', 'n', signed(m.change24hPct, 1));
-      b.appendChild(ch);
+      b.appendChild(el('span', 'n', signed(m.change24hPct, 1)));
       b.addEventListener('click', function () { setCoin(m.coin); });
       box.appendChild(b);
     });
@@ -114,6 +121,7 @@
         try { localStorage.setItem('nt.interval', iv); } catch (e) { /* ignore */ }
         renderIntervals();
         loadCandles();
+        resubscribe();
       });
       box.appendChild(b);
     });
@@ -133,75 +141,101 @@
     st.volume = st.chart.addHistogramSeries({ priceScaleId: '', priceFormat: { type: 'volume' } });
     st.volume.priceScale().applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
   }
+  function volBar(c) { return { time: c.time, value: c.volume, color: c.close >= c.open ? 'rgba(107, 232, 154, .35)' : 'rgba(242, 135, 107, .35)' }; }
 
+  function drawCandles(list, coin, interval) {
+    ensureChart();
+    if (!st.chart) { $('mState').textContent = 'The chart library did not load.'; return; }
+    var shifted = list.map(function (c) { return { time: c.time - SHIFT, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume }; });
+    $('mState').textContent = shifted.length ? '' : 'No candles for this market yet.';
+    if (shifted.length) {
+      var d = decimals(shifted[shifted.length - 1].close);
+      st.candles.applyOptions({ priceFormat: { type: 'price', precision: d, minMove: Math.pow(10, -d) } });
+    }
+    st.candles.setData(shifted);
+    st.volume.setData(shifted.map(volBar));
+    st.last = shifted.length ? shifted[shifted.length - 1].time : null;
+    // Fit once per market and interval, then leave the user's zoom and scroll alone.
+    if (st.fitted !== coin + interval) { st.chart.timeScale().fitContent(); st.fitted = coin + interval; }
+  }
+
+  // One live candle from the stream. Older-than-latest bars are ignored: the chart
+  // library only accepts updates to the newest bar or a brand-new one.
+  function tickCandle(c) {
+    if (!st.candles || st.last == null) return;
+    var bar = { time: Math.floor(c.t / 1000) - SHIFT, open: Number(c.o), high: Number(c.h), low: Number(c.l), close: Number(c.c), volume: Number(c.v) };
+    if (bar.time < st.last || !isFinite(bar.close)) return;
+    st.candles.update(bar);
+    st.volume.update(volBar(bar));
+    st.last = bar.time;
+  }
+
+  function drawBook(d) {
+    var box = $('book');
+    box.textContent = '';
+    var head = el('div', 'bookRow head');
+    ['Price', 'Size', 'Total'].forEach(function (h) { head.appendChild(el('span', null, h)); });
+    box.appendChild(head);
+    var asks = d.asks.slice(0, 11), bids = d.bids.slice(0, 11);
+    var run = 0;
+    var askTot = asks.map(function (l) { run += l.sz; return run; });
+    run = 0;
+    var bidTot = bids.map(function (l) { run += l.sz; return run; });
+    var max = Math.max(askTot[askTot.length - 1] || 0, bidTot[bidTot.length - 1] || 0) || 1;
+    var row = function (l, tot, side) {
+      var r = el('div', 'bookRow ' + side);
+      r.style.setProperty('--depth', ((tot / max) * 100).toFixed(1) + '%');
+      r.appendChild(el('span', 'px', px(l.px)));
+      r.appendChild(el('span', null, qty(l.sz)));
+      r.appendChild(el('span', null, qty(tot)));
+      return r;
+    };
+    for (var i = asks.length - 1; i >= 0; i--) box.appendChild(row(asks[i], askTot[i], 'ask'));
+    var mid = bids.length && asks.length ? (bids[0].px + asks[0].px) / 2 : null;
+    var spread = mid == null ? null : asks[0].px - bids[0].px;
+    var m = el('div', 'bookMid');
+    m.appendChild(el('b', 'mono', mid == null ? 'n/a' : px(mid)));
+    m.appendChild(el('span', 'muted', spread == null ? '' : 'spread ' + px(spread) + ' (' + ((spread / mid) * 100).toFixed(3) + '%)'));
+    box.appendChild(m);
+    bids.forEach(function (l, i) { box.appendChild(row(l, bidTot[i], 'bid')); });
+  }
+
+  function drawTrades() {
+    var box = $('mTrades');
+    box.textContent = '';
+    st.trades.slice(0, 16).forEach(function (t) {
+      var row = el('div', 'tapeRow ' + t.side);
+      row.appendChild(el('span', 'mono muted', clock(t.time)));
+      row.appendChild(el('span', 'side', t.side === 'buy' ? 'BUY' : 'SELL'));
+      row.appendChild(el('span', 'mono', px(t.px)));
+      row.appendChild(el('span', 'mono', money(t.usd)));
+      box.appendChild(row);
+    });
+  }
+
+  // ---------- history and polling (our server) ----------
   function loadCandles() {
     var coin = st.coin, interval = st.interval;
-    get('/api/markets/candles?coin=' + encodeURIComponent(coin) + '&interval=' + interval).then(function (d) {
-      if (coin !== st.coin || interval !== st.interval) return;
-      ensureChart();
-      if (!st.chart) { $('mState').textContent = 'The chart library did not load.'; return; }
-      $('mState').textContent = d.candles.length ? '' : 'No candles for this market yet.';
-      // The chart library draws UTC; shift the candles so the axis reads in local time.
-      var shift = new Date().getTimezoneOffset() * 60;
-      d.candles.forEach(function (c) { c.time -= shift; });
-      st.candles.setData(d.candles);
-      st.volume.setData(d.candles.map(function (c) { return { time: c.time, value: c.volume, color: c.close >= c.open ? 'rgba(107, 232, 154, .35)' : 'rgba(242, 135, 107, .35)' }; }));
-      // Fit once per market and interval, then leave the user's zoom and scroll alone.
-      if (st.fitted !== coin + interval) { st.chart.timeScale().fitContent(); st.fitted = coin + interval; }
+    return get('/api/markets/candles?coin=' + encodeURIComponent(coin) + '&interval=' + interval).then(function (d) {
+      if (coin === st.coin && interval === st.interval) drawCandles(d.candles, coin, interval);
     }).catch(function () { $('mState').textContent = 'Candles are unavailable right now. Retrying.'; });
   }
-
   function loadBook() {
     var coin = st.coin;
-    get('/api/markets/book?coin=' + encodeURIComponent(coin)).then(function (d) {
-      if (coin !== st.coin) return;
-      var box = $('book');
-      box.textContent = '';
-      var head = el('div', 'bookRow head');
-      ['Price', 'Size', 'Total'].forEach(function (h) { head.appendChild(el('span', null, h)); });
-      box.appendChild(head);
-      var asks = d.asks.slice(0, 11), bids = d.bids.slice(0, 11);
-      var run = 0;
-      var askTot = asks.map(function (l) { run += l.sz; return run; });
-      run = 0;
-      var bidTot = bids.map(function (l) { run += l.sz; return run; });
-      var max = Math.max(askTot[askTot.length - 1] || 0, bidTot[bidTot.length - 1] || 0) || 1;
-      var row = function (l, tot, side) {
-        var r = el('div', 'bookRow ' + side);
-        r.style.setProperty('--depth', ((tot / max) * 100).toFixed(1) + '%');
-        r.appendChild(el('span', 'px', px(l.px)));
-        r.appendChild(el('span', null, qty(l.sz)));
-        r.appendChild(el('span', null, qty(tot)));
-        return r;
-      };
-      for (var i = asks.length - 1; i >= 0; i--) box.appendChild(row(asks[i], askTot[i], 'ask'));
-      var mid = el('div', 'bookMid');
-      mid.appendChild(el('b', 'mono', d.mid == null ? 'n/a' : px(d.mid)));
-      mid.appendChild(el('span', 'muted', d.spread == null ? '' : 'spread ' + px(d.spread) + ' (' + ((d.spread / d.mid) * 100).toFixed(3) + '%)'));
-      box.appendChild(mid);
-      bids.forEach(function (l, i) { box.appendChild(row(l, bidTot[i], 'bid')); });
-    }).catch(function () { $('book').textContent = 'Order book is unavailable right now.'; });
+    get('/api/markets/book?coin=' + encodeURIComponent(coin)).then(function (d) { if (coin === st.coin && !streaming('book')) drawBook(d); })
+      .catch(function () { $('book').textContent = 'Order book is unavailable right now.'; });
   }
-
   function loadTrades() {
     var coin = st.coin;
     get('/api/markets/trades?coin=' + encodeURIComponent(coin)).then(function (d) {
-      if (coin !== st.coin) return;
-      var box = $('mTrades');
-      box.textContent = '';
-      d.trades.slice(0, 16).forEach(function (t) {
-        var row = el('div', 'tapeRow ' + t.side);
-        row.appendChild(el('span', 'mono muted', clock(t.time)));
-        row.appendChild(el('span', 'side', t.side === 'buy' ? 'BUY' : 'SELL'));
-        row.appendChild(el('span', 'mono', px(t.px)));
-        row.appendChild(el('span', 'mono', money(t.usd)));
-        box.appendChild(row);
-      });
+      if (coin !== st.coin || streaming('trades')) return;
+      st.trades = d.trades;
+      drawTrades();
     }).catch(function () { $('mTrades').textContent = 'Trades are unavailable right now.'; });
   }
-
   function loadMarkets() {
     return get('/api/markets').then(function (d) {
+      st.demo = Boolean(d.demo);
       st.markets = d.markets || [];
       if (st.markets.length && !current()) st.coin = st.markets[0].coin;
       renderPicker();
@@ -209,21 +243,162 @@
     }).catch(function () { $('mState').textContent = 'Market list is unavailable right now. Retrying.'; });
   }
 
-  function stop() { st.timers.forEach(clearInterval); st.timers = []; }
-  function start() {
-    renderIntervals();
-    loadMarkets().then(function () { loadCandles(); loadBook(); loadTrades(); });
-    st.timers = [
-      setInterval(loadMarkets, 10000),
-      setInterval(loadCandles, 10000),
-      setInterval(loadBook, 1500),
-      setInterval(loadTrades, 3000)
+  // True once the live stream has delivered this kind of data for the current market.
+  // From then on a slower answer from our server must not overwrite the newer picture.
+  function streaming(kind) { return st.wsOpen && st.got[kind] === st.coin; }
+
+  function stopPolling() { st.timers.forEach(clearInterval); st.timers = []; }
+  function startPolling() {
+    stopPolling();
+    st.timers = [setInterval(loadCandles, 10000), setInterval(loadBook, 1500), setInterval(loadTrades, 3000)];
+  }
+
+  // ---------- live stream (straight to the exchange) ----------
+  function wanted() {
+    return [
+      { type: 'candle', coin: st.coin, interval: st.interval },
+      { type: 'l2Book', coin: st.coin },
+      { type: 'trades', coin: st.coin },
+      { type: 'activeAssetCtx', coin: st.coin }
     ];
+  }
+  function send(obj) { if (st.ws && st.wsOpen) st.ws.send(JSON.stringify(obj)); }
+  function resubscribe() {
+    if (!st.wsOpen) return;
+    st.subs.forEach(function (s) { send({ method: 'unsubscribe', subscription: s }); });
+    st.subs = wanted();
+    st.subs.forEach(function (s) { send({ method: 'subscribe', subscription: s }); });
+  }
+
+  function onStream(msg) {
+    st.lastMsg = Date.now();
+    var d = msg.data;
+    if (!d) return;
+    if (msg.channel === 'candle') {
+      if (d.s === st.coin && d.i === st.interval) tickCandle(d);
+    } else if (msg.channel === 'l2Book') {
+      if (d.coin !== st.coin || !d.levels) return;
+      var side = function (levels) { return (levels || []).map(function (l) { return { px: Number(l.px), sz: Number(l.sz) }; }); };
+      st.got.book = d.coin;
+      drawBook({ bids: side(d.levels[0]), asks: side(d.levels[1]) });
+    } else if (msg.channel === 'trades') {
+      var fresh = (Array.isArray(d) ? d : []).filter(function (t) { return t.coin === st.coin; }).map(function (t) {
+        var p = Number(t.px), s = Number(t.sz);
+        return { side: t.side === 'B' ? 'buy' : 'sell', px: p, sz: s, usd: p * s, time: t.time };
+      });
+      if (!fresh.length) return;
+      // The first live batch replaces whatever the slower path had shown.
+      if (st.got.trades !== st.coin) { st.trades = []; st.got.trades = st.coin; }
+      st.trades = fresh.concat(st.trades).sort(function (a, b) { return b.time - a.time; }).slice(0, 40);
+      drawTrades();
+    } else if (msg.channel === 'activeAssetCtx') {
+      var m = current();
+      if (!m || d.coin !== st.coin || !d.ctx) return;
+      var c = d.ctx, mark = Number(c.markPx), prev = Number(c.prevDayPx);
+      if (!isFinite(mark) || mark <= 0) return;
+      m.mark = mark;
+      m.oracle = Number(c.oraclePx) || m.oracle;
+      m.fundingHourly = Number(c.funding) || 0;
+      m.openInterestUsd = (Number(c.openInterest) || 0) * mark;
+      m.volume24hUsd = Number(c.dayNtlVlm) || m.volume24hUsd;
+      if (prev) m.change24hPct = ((mark - prev) / prev) * 100;
+      renderStats();
+    }
+  }
+
+  function closeStream() {
+    clearTimeout(st.wsTimer);
+    clearInterval(st.ping);
+    if (st.ws) { st.ws.onclose = null; st.ws.onerror = null; st.ws.onmessage = null; try { st.ws.close(); } catch (e) { /* ignore */ } }
+    st.ws = null;
+    st.wsOpen = false;
+    st.subs = [];
+    st.got = {};
+  }
+
+  function openStream() {
+    closeStream();
+    if (!st.active) return;
+    var ws;
+    try { ws = new WebSocket(STREAM_URL); } catch (e) { startPolling(); setNote('poll'); return; }
+    st.ws = ws;
+    ws.onopen = function () {
+      st.wsOpen = true;
+      st.wsRetry = 0;
+      st.lastMsg = Date.now();
+      resubscribe();
+      stopPolling();
+      setNote('live');
+      // The exchange drops quiet connections; a ping keeps this one open. If nothing at
+      // all has arrived for a while the connection is dead, so start again.
+      st.ping = setInterval(function () {
+        if (Date.now() - st.lastMsg > 45000) { openStream(); return; }
+        send({ method: 'ping' });
+      }, 20000);
+    };
+    ws.onmessage = function (e) {
+      var msg;
+      try { msg = JSON.parse(e.data); } catch (err) { return; }
+      onStream(msg);
+    };
+    ws.onclose = function () {
+      st.wsOpen = false;
+      st.got = {};
+      clearInterval(st.ping);
+      if (!st.active) return;
+      // Keep the page moving on the slower path while reconnecting, backing off up to 30s.
+      startPolling();
+      setNote('poll');
+      st.wsRetry = Math.min(st.wsRetry + 1, 5);
+      st.wsTimer = setTimeout(function () { loadCandles(); openStream(); }, Math.min(30000, 1000 * Math.pow(2, st.wsRetry)));
+    };
+    ws.onerror = function () { /* onclose follows and handles it */ };
+  }
+
+  // ---------- page lifecycle ----------
+  function setCoin(coin) {
+    st.coin = coin;
+    st.fitted = '';
+    st.trades = [];
+    try { localStorage.setItem('nt.coin', coin); } catch (e) { /* ignore */ }
+    renderPicker();
+    renderStats();
+    loadCandles();
+    loadBook();
+    loadTrades();
+    resubscribe();
+  }
+
+  var marketsTimer = null;
+  function stop() {
+    st.active = false;
+    stopPolling();
+    clearInterval(marketsTimer);
+    closeStream();
+  }
+  function start() {
+    st.active = true;
+    setNote('wait');
+    renderIntervals();
+    loadMarkets().then(function () {
+      if (!st.active) return;
+      loadCandles();
+      loadBook();
+      loadTrades();
+      // Demo data has no exchange behind it, so it only polls (unless a test stream is supplied).
+      if (st.demo && !window.HALFTONE_HL_WS) { startPolling(); setNote('demo'); }
+      else { startPolling(); openStream(); }
+    });
+    marketsTimer = setInterval(loadMarkets, 15000);
   }
 
   $('mSelect').addEventListener('change', function (e) { setCoin(e.target.value); });
   document.addEventListener('nt:view', function (e) {
     stop();
     if (e.detail === 'markets') start();
+  });
+  // A tab left in the background can miss ticks; refresh the history when it comes back.
+  document.addEventListener('visibilitychange', function () {
+    if (!document.hidden && st.active) loadCandles();
   });
 })();
