@@ -18,7 +18,7 @@ Then open http://localhost:3000. `npm test` runs the tests.
 
 ## Pages
 
-- **Home**: landing page with a moving collage built from the live headlines.
+- **Home**: landing page with a scrapbook collage of newsprint clippings built from the live headlines; new items get pasted on as they arrive.
 - **Terminal**: the feed, category tabs, token matching and quick buy.
 - **Breaking**: the most immediate items (tickers, listings, X posts, urgent headlines from
   the last hour), each with its own live chat room, plus a general room.

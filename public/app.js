@@ -168,9 +168,9 @@
     $('statSources').textContent = String(Object.keys(sources).length);
     $('statBreaking').textContent = String(breakingThisHour());
 
-    // Rebuilding restarts the animations, so only do it when empty or once a minute.
+    // Built once; live items are pasted onto it afterwards.
     var box = $('collage');
-    if (!state.items.length || (box.childNodes.length && Date.now() - state.collageAt < 60000)) return;
+    if (!state.items.length || box.childNodes.length) return;
     buildCollage(box);
     var track = $('ticker');
     track.textContent = '';
@@ -184,25 +184,109 @@
     });
   }
 
+  // Scrapbook of clippings made from live headlines. Layout is seeded so it is stable between rebuilds.
+  var CLIP_TYPES = ['news', 'ink', 'news', 'halftone', 'strip', 'news', 'chart', 'ink', 'news', 'strip', 'halftone', 'news'];
+  var GLYPHS = ['$', '%', '↗', 'Extra', '24h', 'No. 1'];
+  function seeded(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function candles(r) {
+    var ns = 'http://www.w3.org/2000/svg';
+    var s = document.createElementNS(ns, 'svg');
+    s.setAttribute('viewBox', '0 0 240 120');
+    var y = 70;
+    for (var i = 0; i < 14; i++) {
+      var open = y, close = Math.min(105, Math.max(15, y + (r() - 0.56) * 34));
+      var top = Math.min(open, close) - r() * 12, bot = Math.max(open, close) + r() * 12;
+      var x = 12 + i * 16;
+      var wick = document.createElementNS(ns, 'line');
+      wick.setAttribute('x1', x); wick.setAttribute('x2', x); wick.setAttribute('y1', top); wick.setAttribute('y2', bot);
+      wick.setAttribute('stroke', '#10251A'); wick.setAttribute('stroke-width', '1.5');
+      var body = document.createElementNS(ns, 'rect');
+      body.setAttribute('x', x - 4.5); body.setAttribute('width', 9);
+      body.setAttribute('y', Math.min(open, close)); body.setAttribute('height', Math.max(2, Math.abs(close - open)));
+      body.setAttribute('fill', close < open ? '#1F7A4A' : '#10251A');
+      s.appendChild(wick); s.appendChild(body);
+      y = close;
+    }
+    return s;
+  }
+  function clipNode(it, type, r, n) {
+    var c = el('div', 'clip t-' + type + ' tear' + (1 + Math.floor(r() * 4)));
+    c.style.setProperty('--r', (r() * 22 - 11).toFixed(1) + 'deg');
+    c.style.setProperty('--t', (11 + r() * 10).toFixed(1) + 's');
+    c.style.setProperty('--sway', (r() * 3 - 1.5).toFixed(1) + 'deg');
+    var hl = null;
+    if (type === 'news') {
+      var mast = el('span', 'mast');
+      mast.appendChild(el('span', null, it.source));
+      mast.appendChild(el('span', null, clock(it.ts).slice(0, 5)));
+      c.appendChild(mast);
+      hl = el('span', 'hl', it.text);
+      c.appendChild(hl);
+      var lines = el('span', 'lines');
+      [0, 1].forEach(function () { var i = el('i'); i.style.setProperty('--h', Math.round(36 + r() * 70) + 'px'); lines.appendChild(i); });
+      c.appendChild(lines);
+    } else if (type === 'ink') {
+      if (n % 3 === 0) c.className += ' t-accent';
+      c.appendChild(el('span', 'kick', (KIND_NAME[it.kind] || it.kind) + ' · ' + it.source));
+      hl = el('span', 'hl', it.text);
+      c.appendChild(hl);
+    } else if (type === 'strip') {
+      c.appendChild(el('span', 'stamp', clock(it.ts) + '  ' + it.source));
+      hl = el('span', 'hl', it.text);
+      c.appendChild(hl);
+    } else if (type === 'halftone') {
+      var g = it.cashtags[0] ? '$' + it.cashtags[0] : GLYPHS[n % GLYPHS.length];
+      c.appendChild(el('span', 'glyph' + (g.length > 4 ? ' long' : ''), g));
+    } else {
+      c.appendChild(el('span', 'cap', 'Markets'));
+      c.appendChild(candles(r));
+    }
+    return { node: c, hl: hl };
+  }
+
   function buildCollage(box) {
     state.collageAt = Date.now();
+    state.clipSlots = [];
+    state.clipNext = 0;
     box.textContent = '';
-    var pool = state.items.slice(0, 40);
-    while (pool.length < 30) pool = pool.concat(state.items.slice(0, 40));
-    var cols = 5;
-    for (var c = 0; c < cols; c++) {
-      var col = el('div', 'col');
-      col.style.animationDuration = (70 + c * 14) + 's';
-      var mine = pool.filter(function (_, i) { return i % cols === c; });
-      mine.concat(mine).forEach(function (it, i) {
-        var style = (i + c) % 7 === 0 ? ' ink' : (i + c * 2) % 5 === 0 ? ' paper' : '';
-        var card = el('div', 'clip' + style + ((i + c) % 4 === 1 ? ' big' : ''));
-        card.appendChild(el('span', 'src', it.source));
-        card.appendChild(el('span', 'hl', it.text));
-        col.appendChild(card);
-      });
-      box.appendChild(col);
+    var r = seeded(11);
+    var cols = 6, rows = 5, n = 0;
+    for (var y = 0; y < rows; y++) {
+      for (var x = 0; x < cols; x++) {
+        var it = state.items[n % state.items.length];
+        var type = CLIP_TYPES[n % CLIP_TYPES.length];
+        var wrap = el('div', 'clipWrap');
+        wrap.style.left = ((x + 0.5 + (r() - 0.5) * 0.7) / cols * 100).toFixed(1) + '%';
+        wrap.style.top = ((y + 0.5 + (r() - 0.5) * 0.7) / rows * 100).toFixed(1) + '%';
+        wrap.style.zIndex = String(Math.floor(r() * 10));
+        wrap.style.setProperty('--w', (type === 'halftone' ? 0.62 : type === 'chart' ? 0.8 : 0.85 + r() * 0.4).toFixed(2));
+        wrap.style.setProperty('--d', (0.3 + r() * 1.1).toFixed(2));
+        var made = clipNode(it, type, r, n);
+        wrap.appendChild(made.node);
+        box.appendChild(wrap);
+        if (made.hl) state.clipSlots.push(made);
+        n++;
+      }
     }
+  }
+
+  // A live item replaces one clipping's headline, with a "pasted on" animation.
+  function pasteClip(item) {
+    var slots = state.clipSlots || [];
+    if (!slots.length) return;
+    var slot = slots[state.clipNext % slots.length];
+    state.clipNext = (state.clipNext + 3) % slots.length;
+    slot.hl.textContent = item.text;
+    slot.node.classList.remove('paste');
+    void slot.node.offsetWidth;
+    slot.node.classList.add('paste');
   }
 
   // ---------- terminal: categories + feed ----------
@@ -591,6 +675,14 @@
     }
   });
 
+  // The collage shifts a little with the pointer, nearer clippings more than far ones.
+  $('view-home').addEventListener('pointermove', function (e) {
+    if (e.pointerType === 'touch' || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var c = $('collage');
+    c.style.setProperty('--px', ((e.clientX / window.innerWidth - 0.5) * -36).toFixed(1) + 'px');
+    c.style.setProperty('--py', ((e.clientY / window.innerHeight - 0.5) * -28).toFixed(1) + 'px');
+  });
+
   function setLive(on) {
     $('live').className = 'live' + (on ? '' : ' off');
     $('liveText').textContent = on ? 'Live' : 'Reconnecting';
@@ -615,7 +707,9 @@
     es.onopen = function () { setLive(true); };
     es.onerror = function () { setLive(false); };
     es.addEventListener('item', function (e) {
-      try { addItem(JSON.parse(e.data), true); } catch (err) { return; }
+      var it;
+      try { it = JSON.parse(e.data); addItem(it, true); } catch (err) { return; }
+      if (state.view === 'home' && !it.backfill) pasteClip(it);
       render();
     });
     es.addEventListener('chat', function (e) {
