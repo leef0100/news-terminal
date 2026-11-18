@@ -215,3 +215,5 @@ button.chip:hover { border-color: var(--line-3); }
   .glow, .clip, .tickerTrack, .item.fresh, .live .dot, .pulse { animation: none !important; }
   .kind:hover { transform: none; }
 }
+.wordmark { font-weight: 700; letter-spacing: -.01em; }
+.wordmark i { font-style: normal; color: var(--accent); }

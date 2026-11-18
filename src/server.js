@@ -98,6 +98,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const port = Number(process.env.PORT) || 3000;
   app.listen(port, () => {
     start();
-    console.log(`News Terminal${demo ? ' (demo data)' : ''} running at http://localhost:${port}`);
+    console.log(`squawk.trade${demo ? ' (demo data)' : ''} running at http://localhost:${port}`);
   });
 }
