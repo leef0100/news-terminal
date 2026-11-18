@@ -4,18 +4,24 @@
   var $ = function (id) { return document.getElementById(id); };
   var KINDS = [
     { id: 'all', label: 'Everything', title: 'Live feed' },
-    { id: 'x', label: 'X accounts', title: 'X accounts' },
-    { id: 'wire', label: 'Newswires', title: 'Newswires' },
-    { id: 'listing', label: 'Listings', title: 'Exchange listings' },
-    { id: 'macro', label: 'Macro', title: 'Macro' }
+    { id: 'crypto', label: 'Crypto', title: 'Crypto' },
+    { id: 'markets', label: 'Markets', title: 'Markets' },
+    { id: 'business', label: 'Business', title: 'Business' },
+    { id: 'technology', label: 'Technology', title: 'Technology' },
+    { id: 'macro', label: 'Macro', title: 'Macro' },
+    { id: 'politics', label: 'Politics', title: 'Politics' },
+    { id: 'world', label: 'World', title: 'World' }
   ];
-  var KIND_NAME = { x: 'X', wire: 'Wire', listing: 'Listing', macro: 'Macro' };
+  var KIND_NAME = { crypto: 'Crypto', markets: 'Markets', business: 'Business', technology: 'Technology', macro: 'Macro', politics: 'Politics', world: 'World' };
   var ICONS = {
     all: 'M12 3 3 8l9 5 9-5-9-5z M3 13l9 5 9-5 M3 18l9 5 9-5',
-    x: 'M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
-    wire: 'M4 5h13v14H6a2 2 0 0 1-2-2z M17 9h3v8a2 2 0 0 1-2 2 M8 9h5 M8 13h5',
-    listing: 'M7 17 17 7 M9 7h8v8',
+    crypto: 'M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18z M9.5 8h4a2 2 0 0 1 0 4h-4z M9.5 12h4.5a2 2 0 0 1 0 4H9.5z M9.5 8v8 M11.5 6.5V8 M11.5 16v1.5',
+    markets: 'M3 17l6-6 4 4 8-8 M15 7h6v6',
+    business: 'M4 8h16v11H4z M9 8V5h6v3 M4 13h16',
+    technology: 'M7 7h10v10H7z M10 3v4 M14 3v4 M10 17v4 M14 17v4 M3 10h4 M3 14h4 M17 10h4 M17 14h4',
     macro: 'M5 20V10 M11 20V4 M17 20v-7 M22 20H2',
+    politics: 'M3 21h18 M5 21V10 M9.5 21V10 M14.5 21V10 M19 21V10 M2 10h20L12 3z',
+    world: 'M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18z M3 12h18 M12 3c3 3 3 15 0 18 M12 3c-3 3-3 15 0 18',
     chat: 'M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'
   };
   var MAX_ITEMS = 300;
@@ -100,7 +106,7 @@
   function visible() {
     var q = state.query.toLowerCase();
     return state.items.filter(function (it) {
-      if (state.kind !== 'all' && it.kind !== state.kind) return false;
+      if (state.kind !== 'all' && it.topic !== state.kind) return false;
       if (q && (it.text + ' ' + it.source).toLowerCase().indexOf(q) === -1) return false;
       return true;
     });
@@ -162,11 +168,18 @@
 
   // ---------- home ----------
   function renderHome() {
-    $('statItems').textContent = String(state.items.length);
-    var sources = {};
-    state.items.forEach(function (i) { sources[i.source] = true; });
-    $('statSources').textContent = String(Object.keys(sources).length);
-    $('statBreaking').textContent = String(breakingThisHour());
+    var cats = $('homeCats');
+    cats.textContent = '';
+    KINDS.slice(1).forEach(function (k) {
+      var n = state.items.filter(function (i) { return i.topic === k.id; }).length;
+      var a = el('a', 'kind k-' + k.id);
+      a.href = '#terminal';
+      a.appendChild(iconBox(k.id));
+      a.appendChild(el('span', null, k.label));
+      a.appendChild(el('span', 'n', String(n)));
+      a.addEventListener('click', function () { state.kind = k.id; });
+      cats.appendChild(a);
+    });
 
     // Built once; live items are pasted onto it afterwards.
     var box = $('collage');
@@ -185,7 +198,7 @@
   }
 
   // Scrapbook of clippings made from live headlines. Layout is seeded so it is stable between rebuilds.
-  var CLIP_TYPES = ['news', 'ink', 'news', 'halftone', 'strip', 'news', 'chart', 'ink', 'news', 'strip', 'halftone', 'news'];
+  var CLIP_TYPES = ['ink', 'news', 'news', 'halftone', 'news', 'news', 'chart', 'news', 'ink', 'news', 'news', 'halftone', 'news', 'ink'];
   var GLYPHS = ['$', '%', '↗', 'Extra', '24h', 'No. 1'];
   function seeded(a) {
     return function () {
@@ -218,14 +231,14 @@
   }
   function clipNode(it, type, r, n) {
     var c = el('div', 'clip t-' + type + ' tear' + (1 + Math.floor(r() * 4)));
-    c.style.setProperty('--r', (r() * 22 - 11).toFixed(1) + 'deg');
+    c.style.setProperty('--r', (r() * 11 - 5.5).toFixed(1) + 'deg');
     c.style.setProperty('--t', (11 + r() * 10).toFixed(1) + 's');
-    c.style.setProperty('--sway', (r() * 3 - 1.5).toFixed(1) + 'deg');
+    c.style.setProperty('--sway', (r() * 1.6 - 0.8).toFixed(1) + 'deg');
     var hl = null;
     if (type === 'news') {
       var mast = el('span', 'mast');
+      mast.appendChild(el('span', null, KIND_NAME[it.topic] || 'News'));
       mast.appendChild(el('span', null, it.source));
-      mast.appendChild(el('span', null, clock(it.ts).slice(0, 5)));
       c.appendChild(mast);
       hl = el('span', 'hl', it.text);
       c.appendChild(hl);
@@ -233,8 +246,8 @@
       [0, 1].forEach(function () { var i = el('i'); i.style.setProperty('--h', Math.round(36 + r() * 70) + 'px'); lines.appendChild(i); });
       c.appendChild(lines);
     } else if (type === 'ink') {
-      if (n % 3 === 0) c.className += ' t-accent';
-      c.appendChild(el('span', 'kick', (KIND_NAME[it.kind] || it.kind) + ' · ' + it.source));
+      if (n === 0) c.className += ' t-accent';
+      c.appendChild(el('span', 'kick', (KIND_NAME[it.topic] || 'News') + ' · ' + it.source));
       hl = el('span', 'hl', it.text);
       c.appendChild(hl);
     } else if (type === 'strip') {
@@ -251,23 +264,29 @@
     return { node: c, hl: hl };
   }
 
+  // The collage frames the hero: clippings sit around the edge, the middle stays clear.
+  // It shows the highest-impact headlines in the feed, biggest stories on the bold clippings.
   function buildCollage(box) {
     state.collageAt = Date.now();
     state.clipSlots = [];
     state.clipNext = 0;
     box.textContent = '';
+    var ranked = state.items.slice().sort(function (a, b) { return (b.impact || 0) - (a.impact || 0) || b.ts - a.ts; });
+    var bold = ranked.slice(0, 3), rest = ranked.slice(3);
+    if (!rest.length) rest = ranked;
     var r = seeded(11);
-    var cols = 6, rows = 5, n = 0;
+    var cols = 5, rows = 4, n = 0, bi = 0, ri = 0;
     for (var y = 0; y < rows; y++) {
       for (var x = 0; x < cols; x++) {
-        var it = state.items[n % state.items.length];
+        if (x >= 1 && x <= 3 && y >= 1 && y <= 2) continue;
         var type = CLIP_TYPES[n % CLIP_TYPES.length];
+        var it = type === 'ink' ? bold[bi++ % bold.length] : rest[ri++ % rest.length];
         var wrap = el('div', 'clipWrap');
-        wrap.style.left = ((x + 0.5 + (r() - 0.5) * 0.7) / cols * 100).toFixed(1) + '%';
-        wrap.style.top = ((y + 0.5 + (r() - 0.5) * 0.7) / rows * 100).toFixed(1) + '%';
+        wrap.style.left = ((x + 0.5 + (r() - 0.5) * 0.3) / cols * 100).toFixed(1) + '%';
+        wrap.style.top = ((y + 0.5 + (r() - 0.5) * 0.3) / rows * 100).toFixed(1) + '%';
         wrap.style.zIndex = String(Math.floor(r() * 10));
-        wrap.style.setProperty('--w', (type === 'halftone' ? 0.62 : type === 'chart' ? 0.8 : 0.85 + r() * 0.4).toFixed(2));
-        wrap.style.setProperty('--d', (0.3 + r() * 1.1).toFixed(2));
+        wrap.style.setProperty('--w', (type === 'halftone' ? 0.6 : type === 'chart' ? 0.8 : type === 'ink' ? 1.1 : 0.95).toFixed(2));
+        wrap.style.setProperty('--d', (0.3 + r() * 0.9).toFixed(2));
         var made = clipNode(it, type, r, n);
         wrap.appendChild(made.node);
         box.appendChild(wrap);
@@ -294,7 +313,7 @@
     var box = $('kinds');
     box.textContent = '';
     KINDS.forEach(function (k) {
-      var n = k.id === 'all' ? state.items.length : state.items.filter(function (i) { return i.kind === k.id; }).length;
+      var n = k.id === 'all' ? state.items.length : state.items.filter(function (i) { return i.topic === k.id; }).length;
       var on = state.kind === k.id;
       var b = el('button', 'kind k-' + k.id + (on ? ' on' : ''));
       b.type = 'button';
@@ -310,7 +329,7 @@
 
   function itemMeta(it, withLag) {
     var meta = el('span', 'meta');
-    meta.appendChild(el('span', 'kindName', KIND_NAME[it.kind] || it.kind));
+    meta.appendChild(el('span', 'kindName', KIND_NAME[it.topic] || 'News'));
     meta.appendChild(el('span', 'strong', it.source));
     meta.appendChild(el('span', 'mono', clock(it.ts)));
     if (withLag) meta.appendChild(el('span', 'lag', lag(it)));
@@ -322,15 +341,16 @@
     var box = $('feed');
     box.textContent = '';
     list.forEach(function (it) {
-      var b = el('button', 'item k-' + it.kind + (it.id === state.selected ? ' on' : '') + (state.fresh[it.id] ? ' fresh' : ''));
+      var b = el('button', 'item k-' + it.topic + (it.id === state.selected ? ' on' : '') + (state.fresh[it.id] ? ' fresh' : ''));
       b.type = 'button';
       b.setAttribute('aria-pressed', String(it.id === state.selected));
-      b.appendChild(iconBox(it.kind));
+      b.appendChild(iconBox(it.topic));
       var body = el('span', 'body');
       body.appendChild(itemMeta(it, true));
       body.appendChild(el('span', 'text', it.text));
       var pills = el('span', 'pills');
       it.cashtags.forEach(function (c) { pills.appendChild(el('span', 'pill', '$' + c)); });
+      if (it.kind === 'listing') pills.appendChild(el('span', 'pill quiet', 'Listing'));
       keywordHits(it).forEach(function (k) { pills.appendChild(el('span', 'pill warn', 'Keyword: ' + k)); });
       if (state.counts[it.id]) pills.appendChild(el('span', 'pill quiet', state.counts[it.id] + (state.counts[it.id] === 1 ? ' message' : ' messages')));
       if (pills.childNodes.length) body.appendChild(pills);
@@ -492,13 +512,13 @@
     var open = state.byId[state.room];
     if (open && list.indexOf(open) === -1) list = [open].concat(list);
     list.forEach(function (it) {
-      var b = el('button', 'room k-' + it.kind + (state.room === it.id ? ' on' : ''));
+      var b = el('button', 'room k-' + it.topic + (state.room === it.id ? ' on' : ''));
       b.type = 'button';
       b.setAttribute('aria-pressed', String(state.room === it.id));
-      b.appendChild(iconBox(it.kind));
+      b.appendChild(iconBox(it.topic));
       var body = el('span', 'body');
       var meta = el('span', 'meta');
-      meta.appendChild(el('span', 'kindName', KIND_NAME[it.kind] || it.kind));
+      meta.appendChild(el('span', 'kindName', KIND_NAME[it.topic] || 'News'));
       meta.appendChild(el('span', 'strong', it.source));
       meta.appendChild(el('span', 'mono', ago(it.ts)));
       body.appendChild(meta);
@@ -520,7 +540,7 @@
     if (room !== 'general' && !state.byId[room]) room = 'general';
     state.room = room;
     var it = state.byId[room];
-    $('roomTag').textContent = it ? (KIND_NAME[it.kind] || it.kind) + ' · ' + it.source + ' · ' + clock(it.ts) : 'General room';
+    $('roomTag').textContent = it ? (KIND_NAME[it.topic] || 'News') + ' · ' + it.source + ' · ' + clock(it.ts) : 'General room';
     $('roomTitle').textContent = it ? it.text : 'Everything breaking';
     $('roomTokens').hidden = !it;
     $('chatError').textContent = '';

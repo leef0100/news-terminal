@@ -18,8 +18,11 @@ Then open http://localhost:3000. `npm test` runs the tests.
 
 ## Pages
 
-- **Home**: landing page with a scrapbook collage of newsprint clippings built from the live headlines; new items get pasted on as they arrive.
-- **Terminal**: the feed, category tabs, token matching and quick buy.
+- **Home**: landing page with a scrapbook collage of newsprint clippings built from the live headlines; new items get pasted on as they arrive. It picks the
+  highest-impact headlines in the feed (ousters, collapses, records, attacks and the like),
+  never invented ones.
+- **Terminal**: the feed, category tabs (Crypto, Markets, Business, Technology, Macro,
+  Politics, World), token matching and quick buy.
 - **Breaking**: the most immediate items (tickers, listings, X posts, urgent headlines from
   the last hour), each with its own live chat room, plus a general room.
 
@@ -27,8 +30,9 @@ Then open http://localhost:3000. `npm test` runs the tests.
 
 - **Live feed** pushed to the browser as items arrive (no refresh), newest first, with the
   delay between publication and arrival shown on each live item.
-- **Sources**: news headlines over RSS (crypto outlets plus WSJ, NYT and FT), set in
-  `config/sources.json`. Headlines are sorted into Newswires, Exchange listings and Macro.
+- **Sources**: news headlines over RSS (crypto outlets plus WSJ, NYT and FT sections), set
+  in `config/sources.json`. Each headline is sorted into a category by keyword, falling
+  back to its feed's own category.
 - **Token matching**: `$TICKER` mentions are searched automatically; any other word can be
   searched from the item. Results are Solana only, de-duplicated per token, with age,
   liquidity and market cap.

@@ -1,12 +1,20 @@
 {
   "pollSeconds": 20,
   "sources": [
-    { "id": "coindesk", "name": "CoinDesk", "kind": "wire", "crypto": true, "url": "https://www.coindesk.com/arc/outboundfeeds/rss/" },
-    { "id": "cointelegraph", "name": "Cointelegraph", "kind": "wire", "crypto": true, "url": "https://cointelegraph.com/rss" },
-    { "id": "decrypt", "name": "Decrypt", "kind": "wire", "crypto": true, "url": "https://decrypt.co/feed" },
-    { "id": "theblock", "name": "The Block", "kind": "wire", "crypto": true, "url": "https://www.theblock.co/rss.xml" },
-    { "id": "wsj-markets", "name": "WSJ Markets", "kind": "wire", "url": "https://feeds.content.dowjones.io/public/rss/RSSMarketsMain" },
-    { "id": "nyt-business", "name": "NYT Business", "kind": "wire", "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml" },
-    { "id": "ft-markets", "name": "FT Markets", "kind": "wire", "url": "https://www.ft.com/markets?format=rss" }
+    {"id": "coindesk", "name": "CoinDesk", "kind": "wire", "crypto": true, "topic": "crypto", "url": "https://www.coindesk.com/arc/outboundfeeds/rss/"},
+    {"id": "cointelegraph", "name": "Cointelegraph", "kind": "wire", "crypto": true, "topic": "crypto", "url": "https://cointelegraph.com/rss"},
+    {"id": "decrypt", "name": "Decrypt", "kind": "wire", "crypto": true, "topic": "crypto", "url": "https://decrypt.co/feed"},
+    {"id": "theblock", "name": "The Block", "kind": "wire", "crypto": true, "topic": "crypto", "url": "https://www.theblock.co/rss.xml"},
+    {"id": "wsj-markets", "name": "WSJ Markets", "kind": "wire", "topic": "markets", "url": "https://feeds.content.dowjones.io/public/rss/RSSMarketsMain"},
+    {"id": "wsj-business", "name": "WSJ Business", "kind": "wire", "topic": "business", "url": "https://feeds.content.dowjones.io/public/rss/WSJcomUSBusiness"},
+    {"id": "wsj-tech", "name": "WSJ Tech", "kind": "wire", "topic": "technology", "url": "https://feeds.content.dowjones.io/public/rss/RSSWSJD"},
+    {"id": "wsj-world", "name": "WSJ World", "kind": "wire", "topic": "world", "url": "https://feeds.content.dowjones.io/public/rss/RSSWorldNews"},
+    {"id": "nyt-business", "name": "NYT Business", "kind": "wire", "topic": "business", "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml"},
+    {"id": "nyt-tech", "name": "NYT Technology", "kind": "wire", "topic": "technology", "url": "https://rss.nytimes.com/services/xml/rss/nyt/Technology.xml"},
+    {"id": "nyt-politics", "name": "NYT Politics", "kind": "wire", "topic": "politics", "url": "https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml"},
+    {"id": "nyt-world", "name": "NYT World", "kind": "wire", "topic": "world", "url": "https://rss.nytimes.com/services/xml/rss/nyt/World.xml"},
+    {"id": "ft-markets", "name": "FT Markets", "kind": "wire", "topic": "markets", "url": "https://www.ft.com/markets?format=rss"},
+    {"id": "ft-companies", "name": "FT Companies", "kind": "wire", "topic": "business", "url": "https://www.ft.com/companies?format=rss"},
+    {"id": "ft-tech", "name": "FT Technology", "kind": "wire", "topic": "technology", "url": "https://www.ft.com/technology?format=rss"}
   ]
 }

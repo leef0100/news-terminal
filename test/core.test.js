@@ -157,3 +157,23 @@ test('chat: validates room and text, strips control characters, limits rate and 
   assert.equal(seen.length, 5);
   assert.equal(chat.post({ room: 'general', text: 'anon check', ip: 'c' }).msg.name, 'anon');
 });
+
+import { topicOf, impactOf } from '../src/enrich.js';
+
+test('topics: keyword rules first, then the source topic, tickers are crypto', () => {
+  const t = (text, src = { id: 's', name: 'S', kind: 'wire', topic: 'world' }) => enrich({ id: '1', text, ts: 1, seenAt: 2 }, src).topic;
+  assert.equal(t('Chipmaker board ousts chief executive'), 'technology');
+  assert.equal(t('Retailer posts record earnings'), 'business');
+  assert.equal(t('Stocks slide as bond yields climb'), 'markets');
+  assert.equal(t('Fed signals rate cuts'), 'macro');
+  assert.equal(t('Senate passes spending bill'), 'politics');
+  assert.equal(t('Fund buys $OTTER'), 'crypto');
+  assert.equal(t('Storm closes northern ports'), 'world');
+  assert.equal(t('Storm closes northern ports', { id: 's', name: 'S', kind: 'wire', topic: 'business' }), 'business');
+  assert.equal(topicOf('anything', { crypto: true }, 'wire'), 'crypto');
+});
+
+test('impact: dramatic headlines outrank routine ones', () => {
+  assert.ok(impactOf('Board ousts founder in surprise vote after record loss', false) > impactOf('Stocks plunge', false));
+  assert.equal(impactOf('Quarterly review of custody rules published', false), 0);
+});

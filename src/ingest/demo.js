@@ -5,17 +5,28 @@ import { enrich } from '../enrich.js';
 const SOURCES = {
   x1: { id: 'x-trader-one', name: '@trader_one', kind: 'x' },
   x2: { id: 'x-macro-figure', name: '@macro_figure', kind: 'x' },
-  wire: { id: 'demo-wire', name: 'Demo Newswire', kind: 'wire', crypto: true }
+  crypto: { id: 'demo-crypto', name: 'Demo Crypto Wire', kind: 'wire', crypto: true, topic: 'crypto' },
+  biz: { id: 'demo-business', name: 'Demo Business Daily', kind: 'wire', topic: 'business' },
+  tech: { id: 'demo-tech', name: 'Demo Tech Journal', kind: 'wire', topic: 'technology' },
+  world: { id: 'demo-world', name: 'Demo World Post', kind: 'wire', topic: 'world' }
 };
 
+// Every company and person here is made up.
 const SCRIPT = [
   ['x1', 'Sample post: thinking about otters again. $OTTER'],
-  ['wire', 'Sample headline: Central bank holds interest rates, signals cuts next quarter'],
-  ['wire', 'Sample headline: Major exchange to list $ROCKET spot pairs at 12:00 UTC'],
+  ['biz', 'Sample headline: Acme Motors board ousts founder in surprise vote'],
+  ['world', 'Sample headline: Central bank holds interest rates, signals cuts next quarter'],
+  ['crypto', 'Sample headline: Major exchange to list $ROCKET spot pairs at 12:00 UTC'],
+  ['tech', 'Sample headline: Globex unveils AI chip, claims record speed'],
   ['x2', 'Sample post: rotating into AI agent names this week, watching $BYTE'],
-  ['wire', 'Sample headline: Regulator opens comment period on stablecoin rules'],
+  ['biz', 'Sample headline: Initech files for bankruptcy after its biggest loss on record'],
+  ['world', 'Sample headline: Parliament passes emergency budget after historic overnight session'],
+  ['crypto', 'Sample headline: Exchange halts withdrawals after exploit drains millions'],
+  ['biz', 'Sample headline: Stocks plunge as oil soars to a record high'],
+  ['tech', 'Sample headline: Umbrella Software chief executive resigns amid data center outage'],
+  ['crypto', 'Sample headline: Regulator opens comment period on stablecoin rules'],
   ['x1', 'Sample post: Walrus season? $WALRUS chart looks ready'],
-  ['wire', 'Sample headline: Inflation print due in 30 minutes, desks expect a quiet open']
+  ['world', 'Sample headline: Inflation print due in 30 minutes, desks expect a quiet open']
 ];
 
 export function startDemo(store, { everyMs = 7000, now = Date.now } = {}) {
