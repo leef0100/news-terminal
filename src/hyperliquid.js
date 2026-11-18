@@ -5,11 +5,29 @@ const API = 'https://api.hyperliquid.xyz/info';
 export const INTERVALS = { '5m': 300000, '15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000 };
 export const validCoin = (c) => typeof c === 'string' && /^[A-Za-z0-9:]{1,20}$/.test(c);
 
-export function createHyperliquid({ fetchImpl = fetch, now = Date.now, timeoutMs = 6000 } = {}) {
+// What each kind of request costs against the exchange's allowance of 1,200 a minute per
+// address (their published weights; candle and history calls cost more the more they return).
+const WEIGHT = { candleSnapshot: 25, fundingHistory: 30, recentTrades: 21, metaAndAssetCtxs: 20, l2Book: 2 };
+
+export function createHyperliquid({ fetchImpl = fetch, now = Date.now, timeoutMs = 6000, weightPerMinute = 900 } = {}) {
   const cache = new Map();
   const inflight = new Map();
   const failures = new Map();
   const FAIL_MS = 2000;
+  // This server is one address to the exchange, however many people it serves. Its own
+  // spending is capped below the exchange's limit; past that, the last answer is reused.
+  // Browsers fetch history from the exchange themselves where they can, each on their own
+  // allowance, so this path is mostly a fallback.
+  let windowStart = 0;
+  let spent = 0;
+  const afford = (type) => {
+    const t = now();
+    if (t - windowStart >= 60000) { windowStart = t; spent = 0; }
+    const cost = WEIGHT[type] || 20;
+    if (spent + cost > weightPerMinute) return false;
+    spent += cost;
+    return true;
+  };
 
   async function info(body, ttlMs) {
     const key = JSON.stringify(body);
@@ -25,6 +43,10 @@ export function createHyperliquid({ fetchImpl = fetch, now = Date.now, timeoutMs
     }
     // Requests that arrive while one is already on its way share its answer.
     if (inflight.has(key)) return inflight.get(key);
+    if (!afford(body.type)) {
+      if (hit) return hit.data;
+      throw new Error('Hyperliquid allowance used up for this minute');
+    }
     const run = (async () => {
       const res = await fetchImpl(API, {
         method: 'POST',
@@ -51,7 +73,7 @@ export function createHyperliquid({ fetchImpl = fetch, now = Date.now, timeoutMs
   }
 
   async function markets() {
-    const data = await info({ type: 'metaAndAssetCtxs' }, 5000);
+    const data = await info({ type: 'metaAndAssetCtxs' }, 10000);
     const universe = data?.[0]?.universe || [];
     const ctxs = data?.[1] || [];
     return universe
@@ -89,7 +111,7 @@ export function createHyperliquid({ fetchImpl = fetch, now = Date.now, timeoutMs
     if (!step) throw new Error('Unknown interval');
     // Round the window to the interval so repeated requests share a cache entry.
     const endTime = Math.floor(now() / step) * step + step;
-    const data = await info({ type: 'candleSnapshot', req: { coin, interval, startTime: endTime - bars * step, endTime } }, 5000);
+    const data = await info({ type: 'candleSnapshot', req: { coin, interval, startTime: endTime - bars * step, endTime } }, 15000);
     return (Array.isArray(data) ? data : []).map((c) => ({
       time: Math.floor(c.t / 1000),
       open: Number(c.o),
@@ -112,11 +134,31 @@ export function createHyperliquid({ fetchImpl = fetch, now = Date.now, timeoutMs
       .slice(0, limit);
   }
 
+  // The order book grouped into wider price steps (`sig` significant figures: 5 is the
+  // finest, 2 the widest), which shows where the large resting orders are further out.
+  async function depth(coin, sig = 3) {
+    const n = [2, 3, 4, 5].includes(Number(sig)) ? Number(sig) : 3;
+    const data = await info({ type: 'l2Book', coin, nSigFigs: n }, 2000);
+    const side = (levels) => (levels || []).slice(0, 20).map((l) => ({ px: Number(l.px), sz: Number(l.sz) })).filter((l) => l.px > 0 && l.sz > 0);
+    return { coin, sig: n, time: data?.time ?? now(), bids: side(data?.levels?.[0]), asks: side(data?.levels?.[1]) };
+  }
+
+  // Hourly funding for the past week, oldest first.
+  async function fundingHistory(coin) {
+    const hour = 3600000;
+    const startTime = Math.floor(now() / hour) * hour - 7 * 24 * hour;
+    const data = await info({ type: 'fundingHistory', coin, startTime }, 600000);
+    return (Array.isArray(data) ? data : [])
+      .map((f) => ({ time: Number(f.time), rate: Number(f.fundingRate) }))
+      .filter((f) => Number.isFinite(f.time) && Number.isFinite(f.rate))
+      .sort((a, b) => a.time - b.time);
+  }
+
   // True for a market the exchange actually lists. Made-up names are refused before they
   // can each cost an upstream call.
   async function has(coin) {
     return (await markets()).some((m) => m.coin === coin);
   }
 
-  return { markets, book, candles, trades, has };
+  return { markets, book, candles, trades, depth, fundingHistory, has };
 }

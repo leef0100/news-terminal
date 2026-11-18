@@ -266,7 +266,9 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
     });
     app.get('/api/markets/book', market(1, (coin) => hl.book(coin)));
     app.get('/api/markets/trades', market(1, async (coin) => ({ trades: await hl.trades(coin) })));
-    app.get('/api/markets/candles', market(3, async (coin, req) => {
+    app.get('/api/markets/depth', market(2, (coin, req) => hl.depth(coin, req.query.sig)));
+    app.get('/api/markets/funding', market(300, async (coin) => ({ coin, history: await hl.fundingHistory(coin) })));
+    app.get('/api/markets/candles', market(10, async (coin, req) => {
       const interval = Object.hasOwn(INTERVALS, String(req.query.interval)) ? String(req.query.interval) : '15m';
       return { interval, candles: await hl.candles(coin, interval) };
     }));

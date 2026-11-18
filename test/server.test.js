@@ -64,6 +64,12 @@ test('server: pages, cache and security headers, feed, tokens, markets, radar, c
     assert.equal((await fetch(url(server, '/api/markets/book?coin=..%2F'))).status, 400);
     assert.equal((await fetch(url(server, '/api/markets/candles?coin=FAKE1'))).status, 400, 'made-up markets are refused');
     assert.ok((await (await fetch(url(server, '/api/markets/candles?coin=BTC&interval=1h'))).json()).candles.length > 100);
+    const depth = await (await fetch(url(server, '/api/markets/depth?coin=BTC&sig=3'))).json();
+    assert.ok(depth.bids.length > 5 && depth.asks.length > 5 && depth.bids[0].px < depth.asks[0].px);
+    const funding = await (await fetch(url(server, '/api/markets/funding?coin=BTC'))).json();
+    assert.ok(funding.history.length > 150 && funding.history[0].time < funding.history.at(-1).time, 'a week of hourly funding, oldest first');
+    assert.equal((await fetch(url(server, '/api/markets/depth?coin=FAKE1'))).status, 400);
+    assert.equal((await fetch(url(server, '/api/markets/funding?coin=..%2F'))).status, 400);
     assert.equal((await (await fetch(url(server, '/api/radar'))).json()).coins.length, 6);
 
     const stream = readEvents(url(server, '/api/chat/stream?room=general'), 1);

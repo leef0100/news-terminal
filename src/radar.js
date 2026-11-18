@@ -30,7 +30,7 @@ export function readTilt(longPct, fundingAvg8h) {
   return { tilt: 'balanced', note: `Balanced: ${pct}% long, ${100 - pct}% short.` + paying };
 }
 
-export function createRadar({ fetchImpl = fetch, hl, now = Date.now, coins = RADAR_COINS, ttlMs = 15000, bigTradeUsd = 250000, timeoutMs = 6000 } = {}) {
+export function createRadar({ fetchImpl = fetch, hl, now = Date.now, coins = RADAR_COINS, ttlMs = 20000, bigTradeUsd = 250000, timeoutMs = 6000 } = {}) {
   let cached = null;
   let pending = null;
 
@@ -119,7 +119,9 @@ export function createRadar({ fetchImpl = fetch, hl, now = Date.now, coins = RAD
           slot.openInterest.push({ venue: 'Hyperliquid', usd: m.openInterestUsd });
         }
       },
-      ...coins.map((coin) => async () => {
+      // Trades cost the most against the exchange's allowance, so only the three biggest
+      // markets are watched for large ones.
+      ...coins.slice(0, 3).map((coin) => async () => {
         for (const t of await hl.trades(coin)) if (t.usd >= bigTradeUsd) bigTrades.push({ ...t, venue: 'Hyperliquid' });
       })
     ]);

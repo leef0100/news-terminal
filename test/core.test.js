@@ -394,3 +394,32 @@ test('market data: failures are not passed on per request, and the last good ans
   assert.equal(await hl.has('BTC'), true);
   assert.equal(await hl.has('FAKE1'), false);
 });
+
+test('hyperliquid adapter: grouped depth, funding history, and a cap on what this server spends', async () => {
+  let t = 1_700_000_000_000;
+  const calls = [];
+  const fetchImpl = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    calls.push(body);
+    if (body.type === 'l2Book') return { ok: true, status: 200, json: async () => ({ time: t, levels: [[{ px: '99', sz: '2' }, { px: '98', sz: '0' }], [{ px: '101', sz: '3' }]] }) };
+    if (body.type === 'fundingHistory') return { ok: true, status: 200, json: async () => [{ time: 2000, fundingRate: '0.00002' }, { time: 1000, fundingRate: '-0.00001' }, { time: 'x', fundingRate: 'y' }] };
+    return { ok: true, status: 200, json: async () => [] };
+  };
+  const hl = createHyperliquid({ fetchImpl, now: () => t, weightPerMinute: 34 });
+  const d = await hl.depth('BTC', 9);
+  assert.equal(d.sig, 3, 'an unsupported grouping falls back to the default');
+  assert.deepEqual(d.bids, [{ px: 99, sz: 2 }], 'empty levels are dropped');
+  assert.deepEqual(d.asks, [{ px: 101, sz: 3 }]);
+  assert.equal(calls[0].nSigFigs, 3);
+  const f = await hl.fundingHistory('BTC');
+  assert.deepEqual(f, [{ time: 1000, rate: -0.00001 }, { time: 2000, rate: 0.00002 }], 'oldest first, bad rows dropped');
+  assert.equal(calls[1].startTime % 3600000, 0, 'the start is on the hour so everyone shares one cached answer');
+  // 2 + 30 of the 34 allowed are spent. A fresh question is refused, an old one is answered from memory.
+  await assert.rejects(hl.fundingHistory('ETH'), /allowance/);
+  t += 5000;
+  assert.deepEqual((await hl.depth('BTC', 3)).bids, [{ px: 99, sz: 2 }]);
+  const before = calls.length;
+  t += 60000;
+  await hl.fundingHistory('ETH');
+  assert.equal(calls.length, before + 1, 'the allowance refills each minute');
+});

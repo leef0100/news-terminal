@@ -193,27 +193,108 @@
   <div class="breakHead">
     <div>
       <p class="kicker radarKick"><span class="pulse" aria-hidden="true"></span> Radar</p>
-      <h1 class="display">Where traders are leaning</h1>
+      <h1 class="display">Read the market before you trade it</h1>
     </div>
     <p id="radarAt" class="muted"></p>
   </div>
-  <div id="venues" class="venues" aria-label="Data sources"></div>
+  <div class="toolbar">
+    <div id="rCoins" class="kinds" role="group" aria-label="Market"></div>
+    <div class="tools">
+      <label for="rSelect" class="sr">All markets</label>
+      <select id="rSelect" class="select"></select>
+      <div id="rIntervals" class="seg" role="group" aria-label="Candle size"></div>
+    </div>
+  </div>
+  <p id="radarState" class="emptyBox radarState">Loading the market…</p>
+
+  <div class="cols">
+    <main class="feed">
+      <div class="stack">
+        <section class="card chartCard" aria-labelledby="rTitle">
+          <div class="row between">
+            <h2 id="rTitle">Chart</h2>
+            <p id="rLive" class="liveNote"><span class="dot" aria-hidden="true"></span><span id="rLiveText">Connecting…</span></p>
+          </div>
+          <div id="rToggles" class="toggles" role="group" aria-label="Chart overlays"></div>
+          <div class="chartWrap">
+            <div id="rChart" class="chart tall"></div>
+            <canvas id="rHeat" class="heatLayer" aria-hidden="true"></canvas>
+          </div>
+          <p id="rChartNote" class="muted small"></p>
+          <p class="muted small">Market data from Hyperliquid's public API. Charts by <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">TradingView Lightweight Charts</a>.</p>
+        </section>
+        <section class="card" aria-labelledby="cTitle">
+          <div class="sideHead">
+            <h2 id="cTitle">Confluence</h2>
+            <span class="muted small">Separate readings, lined up. A summary of indicators, not advice.</span>
+          </div>
+          <div class="verdict">
+            <div id="cVerdict" class="verdictBig">…</div>
+            <div id="cCounts" class="verdictCounts"></div>
+          </div>
+          <ul id="cFactors" class="factors"></ul>
+        </section>
+
+      </div>
+    </main>
+
+    <aside class="detail flow" aria-label="Levels and tools">
+      <div class="stack">
+        <section class="card" aria-labelledby="lvTitle">
+          <div class="sideHead"><h2 id="lvTitle">Key levels</h2><span class="muted small">Distance from price</span></div>
+          <div id="rLevels" class="levels"></div>
+        </section>
+        <section class="card" aria-labelledby="tfTitle">
+          <h2 id="tfTitle">Across timeframes</h2>
+          <div class="tableWrap"><table id="rTf" class="tf"></table></div>
+        </section>
+        <section class="card" aria-labelledby="psTitle">
+          <div class="sideHead"><h2 id="psTitle">Position size</h2><span class="muted small">Risk first</span></div>
+          <form id="psForm" class="psForm">
+            <label>Account size ($)<input id="psAccount" type="number" inputmode="decimal" min="0" step="any" value="1000"></label>
+            <label>Risk per trade (%)<input id="psRisk" type="number" inputmode="decimal" min="0" max="100" step="any" value="1"></label>
+            <label>Entry price<input id="psEntry" type="number" inputmode="decimal" min="0" step="any"></label>
+            <label>Stop price<input id="psStop" type="number" inputmode="decimal" min="0" step="any"></label>
+            <label>Leverage (x)<input id="psLev" type="number" inputmode="decimal" min="1" max="100" step="1" value="5"></label>
+            <div class="row wrap psFill">
+              <button id="psUsePrice" type="button" class="linkBtn">Entry at current price</button>
+              <button id="psUseSupport" type="button" class="linkBtn">Stop under nearest support</button>
+              <button id="psUseResist" type="button" class="linkBtn">Stop over nearest resistance</button>
+            </div>
+          </form>
+          <div id="psOut" class="psOut" aria-live="polite"></div>
+        </section>
+      </div>
+    </aside>
+  </div>
+
   <div class="pad">
-    <p id="radarState" class="emptyBox">Loading positioning…</p>
-    <div id="radarCoins" class="radarGrid"></div>
     <div class="twoCol">
-      <section class="card">
-        <h2>Funding heatmap</h2>
-        <p class="muted small">Yearly funding rate by venue. Green means longs pay shorts, coral means shorts pay longs.</p>
-        <div class="tableWrap"><table id="heat" class="heat"></table></div>
+      <section class="card" aria-labelledby="mapTitle">
+        <div class="sideHead"><h2 id="mapTitle">Market heatmap</h2><span class="muted small">24-hour change, sized by volume</span></div>
+        <div id="rMap" class="mmap"></div>
       </section>
-      <section class="card">
-        <h2>Large trades</h2>
-        <p id="bigNote" class="muted small"></p>
-        <div id="bigTrades" class="tape"></div>
+      <section class="card" aria-labelledby="fundTitle">
+        <div class="sideHead"><h2 id="fundTitle">Funding</h2><span class="muted small">Yearly rate. Green: longs pay. Coral: shorts pay.</span></div>
+        <div class="tableWrap"><table id="heat" class="heat"></table></div>
+        <h3 id="fhTitle" class="subHead">Past week, hour by hour</h3>
+        <div id="rFundHist" class="fundHist" role="img" aria-label="Hourly funding for the past seven days"></div>
+        <p id="rFundNote" class="muted small"></p>
       </section>
     </div>
-    <p class="muted small">Positioning is the share of accounts net long or short on each venue, as the venue reports it. It describes the crowd and is not a recommendation to trade.</p>
+
+    <section aria-labelledby="posTitle">
+      <div class="sideHead padHead"><h2 id="posTitle">Who is positioned which way</h2><div id="venues" class="venues inline" aria-label="Data sources"></div></div>
+      <div id="radarCoins" class="radarGrid"></div>
+    </section>
+
+    <section class="card" aria-labelledby="bigTitle">
+      <h2 id="bigTitle">Large trades</h2>
+      <p id="bigNote" class="muted small"></p>
+      <div id="bigTrades" class="tape"></div>
+    </section>
+
+    <p class="muted small">Everything on this page describes the market as it is. None of it predicts what happens next or tells you what to do. Positioning counts accounts, not money. The liquidation overlay is a model built from where volume traded, not a record of real positions.</p>
   </div>
 </section>
 
@@ -267,6 +348,8 @@
 
 <!-- app.js goes last: it announces the opening page, and the others must be listening. -->
 <script src="/vendor/lightweight-charts.js"></script>
+<script src="indicators.js"></script>
+<script src="hl.js"></script>
 <script src="wallet.js"></script>
 <script src="radar.js"></script>
 <script src="markets.js"></script>

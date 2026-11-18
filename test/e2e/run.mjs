@@ -151,6 +151,43 @@ await p.bringToFront();
 // ----- radar, markets (demo) -----
 await p.goto(BASE + '/#radar'); await p.waitForSelector('.coin');
 check('radar renders', (await p.$$('.coin')).length === 6 && (await p.$$('#heat tr')).length === 7);
+await p.waitForFunction(() => document.querySelectorAll('#cFactors .factor').length >= 8 && document.querySelectorAll('#rLevels .lv').length > 3 && document.querySelector('#rChart canvas'), { timeout: 10000 });
+const rd = await p.evaluate(() => ({
+  verdict: document.querySelector('#cVerdict').textContent, why: document.querySelectorAll('#cFactors details').length,
+  toggles: document.querySelectorAll('#rToggles .tgl').length, now: document.querySelectorAll('#rLevels .lv.now').length,
+  tf: document.querySelectorAll('#rTf tr').length, tiles: document.querySelectorAll('#rMap .tile').length,
+  fh: document.querySelectorAll('#rFundHist .fh').length, live: document.querySelector('#rLiveText').textContent,
+  page: document.querySelector('#view-radar').innerText
+}));
+check('radar: confluence gives a plain-language reading with an explanation for every factor', /lean|mixed/i.test(rd.verdict) && rd.why >= 8, rd.verdict);
+check('radar: levels, timeframes, market map and funding history are filled in', rd.now === 1 && rd.tf === 5 && rd.tiles === 6 && rd.fh > 100 && rd.toggles === 9);
+check('radar: demo prices are labelled as invented', /invented/.test(rd.live));
+check('radar: says what it is not', /not advice/i.test(rd.page) && /model/i.test(rd.page) && !/\b(buy|sell) now\b|guarantee/i.test(rd.page));
+// The overlay canvas has something drawn on it, and switching a layer off changes it.
+const ink = () => p.$eval('#rHeat', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 3; i < d.length; i += 4) if (d[i]) n++; return n; });
+const inkOn = await ink();
+await p.evaluate(() => [...document.querySelectorAll('#rToggles .tgl')].filter((b) => /Volume by price|Resting orders|Liquidation/.test(b.textContent) && b.getAttribute('aria-pressed') === 'true').forEach((b) => b.click()));
+await sleep(300);
+const inkOff = await ink();
+check('radar: heat layers draw on the chart and can be switched off', inkOn > 500 && inkOff === 0, inkOn + ' -> ' + inkOff);
+await p.evaluate(() => [...document.querySelectorAll('#rToggles .tgl')].filter((b) => /Volume by price|Resting orders/.test(b.textContent)).forEach((b) => b.click()));
+// Position size: 1% of 1,000 with a stop 5% away is a $200 position.
+const type = async (sel, v) => { await p.$eval(sel, (n, val) => { n.value = val; n.dispatchEvent(new Event('input', { bubbles: true })); }, v); };
+await type('#psAccount', '1000'); await type('#psRisk', '1'); await type('#psEntry', '100'); await type('#psStop', '95'); await type('#psLev', '10');
+await sleep(150);
+const ps = await p.$eval('#psOut', (n) => n.innerText.replace(/\s+/g, ' '));
+check('radar: position size follows the risk', /Long/.test(ps) && /\$10 if the stop/.test(ps) && /\(\$200\)/.test(ps) && /\$20 \(2% of account\)/.test(ps), ps.slice(0, 160));
+await type('#psLev', '50'); await sleep(150);
+check('radar: warns when the stop sits beyond liquidation', /liquidat/i.test(await p.$eval('#psOut .psWarn', (n) => n.textContent).catch(() => '')));
+await p.click('#psUsePrice'); await p.click('#psUseSupport'); await sleep(150);
+check('radar: entry and stop can be filled from the chart levels', Number(await p.$eval('#psEntry', (n) => n.value)) > Number(await p.$eval('#psStop', (n) => n.value)) && Number(await p.$eval('#psStop', (n) => n.value)) > 0);
+// Another market and candle size.
+await p.evaluate(() => [...document.querySelectorAll('#rMap .tile')].find((t) => /ETH/.test(t.textContent)).click());
+await p.waitForFunction(() => /^ETH/.test(document.querySelector('#rTitle').textContent) && document.querySelectorAll('#rLevels .lv').length > 3, { timeout: 10000 });
+await p.evaluate(() => [...document.querySelectorAll('#rIntervals button')].find((x) => x.textContent === '4h').click());
+await p.waitForFunction(() => /4h/.test(document.querySelector('#rTitle').textContent), { timeout: 10000 });
+check('radar: switching market and candle size reloads the workspace', /ETH/.test(await p.$eval('#fhTitle', (n) => n.textContent)));
+await p.evaluate(() => { localStorage.removeItem('nt.rcoin'); localStorage.removeItem('nt.rint'); });
 await p.goto(BASE + '/#markets'); await p.waitForSelector('#book .bookRow.bid'); await p.waitForSelector('#mChart canvas');
 await sleep(600);
 check('markets demo note says prices are invented', /invented/.test(await p.$eval('#mLiveText', (n) => n.textContent)));

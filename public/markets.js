@@ -8,11 +8,10 @@
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
   var INTERVALS = ['5m', '15m', '1h', '4h', '1d'];
-  var STREAM_URL = window.HALFTONE_HL_WS || 'wss://api.hyperliquid.xyz/ws';
   var st = {
     coin: 'BTC', interval: '15m', markets: [], demo: false, active: false,
     timers: [], chart: null, candles: null, volume: null, fitted: '', last: null,
-    ws: null, wsOpen: false, wsRetry: 0, wsTimer: null, wsStable: null, ping: null, subs: [], lastMsg: 0, trades: [], got: {}, pending: [], shown: '', historyRetry: null
+    stream: null, wsOpen: false, trades: [], got: {}, pending: [], shown: '', historyRetry: null
   };
   try {
     st.coin = localStorage.getItem('nt.coin') || 'BTC';
@@ -239,8 +238,8 @@
   function loadCandles() {
     var coin = st.coin, interval = st.interval;
     clearTimeout(st.historyRetry);
-    return get('/api/markets/candles?coin=' + encodeURIComponent(coin) + '&interval=' + interval).then(function (d) {
-      if (coin === st.coin && interval === st.interval) drawCandles(d.candles, coin, interval);
+    return window.HL.candles(coin, interval).then(function (list) {
+      if (coin === st.coin && interval === st.interval) drawCandles(list, coin, interval);
     }).catch(function () {
       $('mState').textContent = 'Candles are unavailable right now. Retrying.';
       // History is retried by itself: the live stream cannot draw without it.
@@ -269,7 +268,7 @@
     }).catch(function () { $('mTrades').textContent = 'Trades are unavailable right now.'; });
   }
   function loadMarkets() {
-    return get('/api/markets').then(function (d) {
+    return window.HL.markets().then(function (d) {
       st.demo = Boolean(d.demo);
       // The list is up to a few seconds old. The market on screen is being updated by the
       // live stream, so its newer figures are kept and not replaced by older ones.
@@ -300,21 +299,9 @@
       { type: 'activeAssetCtx', coin: st.coin }
     ];
   }
-  function send(obj) { if (st.ws && st.wsOpen) st.ws.send(JSON.stringify(obj)); }
-  // Only the subscriptions that actually changed are dropped and added: changing the
-  // candle size leaves the order book and trades streaming undisturbed.
-  function resubscribe() {
-    if (!st.wsOpen) return;
-    var want = wanted();
-    var key = function (s) { return JSON.stringify(s); };
-    var wantKeys = want.map(key), haveKeys = st.subs.map(key);
-    st.subs.forEach(function (s, i) { if (wantKeys.indexOf(haveKeys[i]) === -1) send({ method: 'unsubscribe', subscription: s }); });
-    want.forEach(function (s, i) { if (haveKeys.indexOf(wantKeys[i]) === -1) send({ method: 'subscribe', subscription: s }); });
-    st.subs = want;
-  }
+  function resubscribe() { if (st.stream) st.stream.set(wanted()); }
 
   function onStream(msg) {
-    st.lastMsg = Date.now();
     var d = msg.data;
     if (!d) return;
     if (msg.channel === 'candle') {
@@ -354,61 +341,22 @@
   }
 
   function closeStream() {
-    clearTimeout(st.wsTimer);
-    clearTimeout(st.wsStable);
-    clearInterval(st.ping);
-    if (st.ws) { st.ws.onclose = null; st.ws.onerror = null; st.ws.onmessage = null; try { st.ws.close(); } catch (e) { /* ignore */ } }
-    st.ws = null;
+    if (st.stream) st.stream.close();
+    st.stream = null;
     st.wsOpen = false;
-    st.subs = [];
     st.got = {};
   }
-
   function openStream() {
     closeStream();
     if (!st.active) return;
-    var ws;
-    try { ws = new WebSocket(STREAM_URL); } catch (e) { startPolling(); setNote('poll'); return; }
-    st.ws = ws;
-    ws.onopen = function () {
-      st.wsOpen = true;
-      // The retry count is forgotten only once the connection has held for a while. A
-      // server that accepts and then drops would otherwise have every browser
-      // reconnecting every couple of seconds for ever.
-      clearTimeout(st.wsStable);
-      st.wsStable = setTimeout(function () { st.wsRetry = 0; }, 30000);
-      st.lastMsg = Date.now();
-      resubscribe();
-      stopPolling();
-      setNote('live');
-      // The exchange drops quiet connections; a ping keeps this one open. If nothing at
-      // all has arrived for a while the connection is dead, so start again.
-      st.ping = setInterval(function () {
-        if (Date.now() - st.lastMsg > 45000) { try { ws.close(); } catch (e) { /* ignore */ } return; }
-        send({ method: 'ping' });
-      }, 20000);
-    };
-    ws.onmessage = function (e) {
-      var msg;
-      try { msg = JSON.parse(e.data); } catch (err) { return; }
-      onStream(msg);
-    };
-    ws.onclose = function () {
-      st.wsOpen = false;
-      st.got = {};
-      clearInterval(st.ping);
-      if (!st.active) return;
-      // Keep the page moving on the slower path while reconnecting, backing off up to 30s.
-      startPolling();
-      setNote('poll');
-      clearTimeout(st.wsStable);
-      st.wsRetry = Math.min(st.wsRetry + 1, 6);
-      // Wait longer after each failure (up to a minute), and never at exactly the same
-      // moment as everyone else who lost the connection at the same time.
-      var wait = Math.min(60000, 1000 * Math.pow(2, st.wsRetry)) * (0.5 + Math.random());
-      st.wsTimer = setTimeout(function () { loadCandles(); openStream(); }, wait);
-    };
-    ws.onerror = function () { /* onclose follows and handles it */ };
+    st.stream = window.HL.stream({
+      onMessage: onStream,
+      onOpen: function () { st.wsOpen = true; stopPolling(); setNote('live'); },
+      // Keep the page moving on the slower path while the stream reconnects.
+      onDown: function () { st.wsOpen = false; st.got = {}; if (st.active) { startPolling(); setNote('poll'); } },
+      onRetry: function () { if (st.active) loadCandles(); }
+    });
+    st.stream.set(wanted());
   }
 
   // ---------- page lifecycle ----------
@@ -444,7 +392,7 @@
       loadBook();
       loadTrades();
       // Demo data has no exchange behind it, so it only polls (unless a test stream is supplied).
-      if (st.demo && !window.HALFTONE_HL_WS) { startPolling(); setNote('demo'); }
+      if (!window.HL.canStream()) { startPolling(); setNote('demo'); }
       else { startPolling(); openStream(); }
     });
     marketsTimer = setInterval(loadMarkets, 15000);
