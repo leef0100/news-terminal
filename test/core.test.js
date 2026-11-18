@@ -124,3 +124,36 @@ test('poller: first pull is backlog, later items are live, a failing feed does n
   assert.equal(status.find((s) => s.id === 'good').ok, true);
   assert.equal(status.find((s) => s.id === 'bad').ok, false);
 });
+
+import { createChat } from '../src/chat.js';
+
+test('breaking flag: tickers, listings, X posts and urgent words qualify; routine news does not', () => {
+  const wire = { id: 'w', name: 'W', kind: 'wire', crypto: true };
+  const mk = (text, src = wire) => enrich({ id: '1', text, ts: 1, seenAt: 2 }, src).breaking;
+  assert.equal(mk('Exchange halts withdrawals after exploit'), true);
+  assert.equal(mk('Fund adds $OTTER to holdings'), true);
+  assert.equal(mk('Exchange to list ROCKET'), true);
+  assert.equal(mk('hello', { id: 'x', name: '@a', kind: 'x' }), true);
+  assert.equal(mk('Quarterly review of custody rules published'), false);
+});
+
+test('chat: validates room and text, strips control characters, limits rate and room size', () => {
+  let t = 0;
+  const chat = createChat({ hasRoom: (r) => r === 'general', now: () => t, maxPerRoom: 3, burst: 2, windowMs: 1000 });
+  const seen = [];
+  chat.on((m) => seen.push(m.id));
+  assert.equal(chat.post({ room: 'nope', text: 'hi', ip: 'a' }).status, 404);
+  assert.equal(chat.post({ room: 'general', text: '   ', ip: 'a' }).status, 400);
+  const ok = chat.post({ room: 'general', name: ' bob\n ', text: 'gm\u0007  all', ip: 'a' });
+  assert.deepEqual([ok.status, ok.msg.name, ok.msg.text], [200, 'bob', 'gm all']);
+  assert.equal(chat.post({ room: 'general', text: 'x'.repeat(500), ip: 'a' }).msg.text.length, 280);
+  assert.equal(chat.post({ room: 'general', text: 'third', ip: 'a' }).status, 429);
+  assert.equal(chat.post({ room: 'general', text: 'other person', ip: 'b' }).status, 200);
+  t = 2000;
+  chat.post({ room: 'general', text: 'later', ip: 'a' });
+  chat.post({ room: 'general', text: 'latest', ip: 'a' });
+  assert.deepEqual(chat.list('general').map((m) => m.text), ['other person', 'later', 'latest']);
+  assert.equal(chat.counts().general, 3);
+  assert.equal(seen.length, 5);
+  assert.equal(chat.post({ room: 'general', text: 'anon check', ip: 'c' }).msg.name, 'anon');
+});

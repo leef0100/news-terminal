@@ -3,20 +3,31 @@
 
   var $ = function (id) { return document.getElementById(id); };
   var KINDS = [
-    { id: 'all', label: 'All sources' },
-    { id: 'x', label: 'X accounts' },
-    { id: 'wire', label: 'Newswires' },
-    { id: 'listing', label: 'Exchange listings' },
-    { id: 'macro', label: 'Macro' }
+    { id: 'all', label: 'Everything', title: 'Live feed' },
+    { id: 'x', label: 'X accounts', title: 'X accounts' },
+    { id: 'wire', label: 'Newswires', title: 'Newswires' },
+    { id: 'listing', label: 'Listings', title: 'Exchange listings' },
+    { id: 'macro', label: 'Macro', title: 'Macro' }
   ];
-  var KIND_TAG = { x: 'X', wire: 'Wire', listing: 'Listing', macro: 'Macro', stream: 'Stream' };
+  var KIND_NAME = { x: 'X', wire: 'Wire', listing: 'Listing', macro: 'Macro' };
+  var ICONS = {
+    all: 'M12 3 3 8l9 5 9-5-9-5z M3 13l9 5 9-5 M3 18l9 5 9-5',
+    x: 'M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
+    wire: 'M4 5h13v14H6a2 2 0 0 1-2-2z M17 9h3v8a2 2 0 0 1-2 2 M8 9h5 M8 13h5',
+    listing: 'M7 17 17 7 M9 7h8v8',
+    macro: 'M5 20V10 M11 20V4 M17 20v-7 M22 20H2',
+    chat: 'M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'
+  };
   var MAX_ITEMS = 300;
+  var HOUR = 3600000;
 
   var state = {
-    items: [], byId: {}, kind: 'all', query: '', selected: null, fresh: {},
+    view: 'home', items: [], byId: {}, kind: 'all', query: '', selected: null, fresh: {},
     keywords: load('nt.keywords', []), sound: load('nt.sound', false), soundAll: load('nt.soundAll', false),
-    tokens: [], token: null, matchReq: 0, activeTerm: null
+    tokens: [], token: null, matchReq: 0, activeTerm: null,
+    room: 'general', msgs: {}, counts: {}, seenMsg: {}, name: load('nt.name', ''), collageAt: 0
   };
+  if (!state.name) { state.name = 'anon-' + Math.floor(1000 + Math.random() * 9000); save('nt.name', state.name); }
 
   function load(key, fallback) {
     try { var v = JSON.parse(localStorage.getItem(key)); return v == null ? fallback : v; } catch (e) { return fallback; }
@@ -29,6 +40,24 @@
     if (text != null) n.textContent = text;
     return n;
   }
+  function icon(name, size) {
+    var ns = 'http://www.w3.org/2000/svg';
+    var s = document.createElementNS(ns, 'svg');
+    s.setAttribute('viewBox', '0 0 24 24');
+    s.setAttribute('width', size || 18);
+    s.setAttribute('height', size || 18);
+    s.setAttribute('fill', 'none');
+    s.setAttribute('stroke', 'currentColor');
+    s.setAttribute('stroke-width', '2');
+    s.setAttribute('stroke-linecap', 'round');
+    s.setAttribute('stroke-linejoin', 'round');
+    s.setAttribute('aria-hidden', 'true');
+    var p = document.createElementNS(ns, 'path');
+    p.setAttribute('d', ICONS[name] || ICONS.wire);
+    s.appendChild(p);
+    return s;
+  }
+  function iconBox(name) { var b = el('span', 'ico'); b.appendChild(icon(name)); return b; }
   function safeUrl(u) { return typeof u === 'string' && /^https:\/\//i.test(u) ? u : null; }
 
   // ---------- formatting ----------
@@ -44,6 +73,10 @@
     if (sec < 172800) return Math.round(sec / 3600) + 'h';
     return Math.round(sec / 86400) + 'd';
   }
+  function ago(ts) {
+    var s = Math.max(0, Math.round((Date.now() - ts) / 1000));
+    return s < 45 ? 'just now' : dur(s) + ' ago';
+  }
   function money(n) {
     if (!n) return 'n/a';
     if (n >= 1e9) return '$' + (n / 1e9).toFixed(1) + 'B';
@@ -54,12 +87,12 @@
   function lag(item) {
     if (item.backfill) return '';
     var ms = item.seenAt - item.ts;
-    if (!(ms >= 0) || ms > 3600000) return '';
+    if (!(ms >= 0) || ms > HOUR) return '';
     return ms < 60000 ? '+' + (ms / 1000).toFixed(1) + 's' : '+' + Math.round(ms / 60000) + 'm';
   }
   function shortAddr(a) { return a.length > 10 ? a.slice(0, 4) + '…' + a.slice(-4) : a; }
 
-  // ---------- feed ----------
+  // ---------- data ----------
   function keywordHits(item) {
     var t = item.text.toLowerCase();
     return state.keywords.filter(function (k) { return t.indexOf(k.toLowerCase()) !== -1; });
@@ -71,6 +104,15 @@
       if (q && (it.text + ' ' + it.source).toLowerCase().indexOf(q) === -1) return false;
       return true;
     });
+  }
+  // Most immediate items: urgent ones from the last hour, or the newest urgent ones if it is quiet.
+  function breakingList() {
+    var urgent = state.items.filter(function (i) { return i.breaking; });
+    var recent = urgent.filter(function (i) { return Date.now() - i.ts < HOUR; });
+    return (recent.length >= 3 ? recent : urgent.slice(0, 12)).slice(0, 30);
+  }
+  function breakingThisHour() {
+    return state.items.filter(function (i) { return i.breaking && Date.now() - i.ts < HOUR; }).length;
   }
 
   function addItem(item, live) {
@@ -88,19 +130,107 @@
     }
   }
 
+  // ---------- routing ----------
+  function route() {
+    var v = (location.hash || '#home').slice(1);
+    if (['home', 'terminal', 'breaking'].indexOf(v) === -1) v = 'home';
+    state.view = v;
+    ['home', 'terminal', 'breaking'].forEach(function (name) { $('view-' + name).hidden = name !== v; });
+    document.querySelectorAll('.tabs a').forEach(function (a) {
+      var on = a.dataset.view === v;
+      a.className = on ? 'on' : '';
+      if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+    });
+    render();
+    if (v === 'breaking') openRoom(state.room);
+    window.scrollTo(0, 0);
+  }
+
+  function render() {
+    renderNav();
+    if (state.view === 'home') renderHome();
+    if (state.view === 'terminal') { renderKinds(); renderFeed(); }
+    if (state.view === 'breaking') renderRooms();
+  }
+
+  function renderNav() {
+    var n = breakingThisHour();
+    var c = $('breakingCount');
+    c.hidden = n === 0;
+    c.textContent = String(n);
+  }
+
+  // ---------- home ----------
+  function renderHome() {
+    $('statItems').textContent = String(state.items.length);
+    var sources = {};
+    state.items.forEach(function (i) { sources[i.source] = true; });
+    $('statSources').textContent = String(Object.keys(sources).length);
+    $('statBreaking').textContent = String(breakingThisHour());
+
+    // Rebuilding restarts the animations, so only do it when empty or once a minute.
+    var box = $('collage');
+    if (!state.items.length || (box.childNodes.length && Date.now() - state.collageAt < 60000)) return;
+    buildCollage(box);
+    var track = $('ticker');
+    track.textContent = '';
+    var latest = state.items.slice(0, 12);
+    // Two copies so the strip can loop without a gap.
+    latest.concat(latest).forEach(function (it) {
+      var s = el('span');
+      s.appendChild(el('b', null, clock(it.ts)));
+      s.appendChild(document.createTextNode(it.text));
+      track.appendChild(s);
+    });
+  }
+
+  function buildCollage(box) {
+    state.collageAt = Date.now();
+    box.textContent = '';
+    var pool = state.items.slice(0, 40);
+    while (pool.length < 30) pool = pool.concat(state.items.slice(0, 40));
+    var cols = 5;
+    for (var c = 0; c < cols; c++) {
+      var col = el('div', 'col');
+      col.style.animationDuration = (70 + c * 14) + 's';
+      var mine = pool.filter(function (_, i) { return i % cols === c; });
+      mine.concat(mine).forEach(function (it, i) {
+        var style = (i + c) % 7 === 0 ? ' ink' : (i + c * 2) % 5 === 0 ? ' paper' : '';
+        var card = el('div', 'clip' + style + ((i + c) % 4 === 1 ? ' big' : ''));
+        card.appendChild(el('span', 'src', it.source));
+        card.appendChild(el('span', 'hl', it.text));
+        col.appendChild(card);
+      });
+      box.appendChild(col);
+    }
+  }
+
+  // ---------- terminal: categories + feed ----------
   function renderKinds() {
     var box = $('kinds');
     box.textContent = '';
     KINDS.forEach(function (k) {
       var n = k.id === 'all' ? state.items.length : state.items.filter(function (i) { return i.kind === k.id; }).length;
-      var b = el('button', 'kind' + (state.kind === k.id ? ' on' : ''));
+      var on = state.kind === k.id;
+      var b = el('button', 'kind k-' + k.id + (on ? ' on' : ''));
       b.type = 'button';
-      b.setAttribute('aria-pressed', String(state.kind === k.id));
+      b.setAttribute('aria-pressed', String(on));
+      b.appendChild(iconBox(k.id));
       b.appendChild(el('span', null, k.label));
       b.appendChild(el('span', 'n', String(n)));
       b.addEventListener('click', function () { state.kind = k.id; renderKinds(); renderFeed(); });
       box.appendChild(b);
+      if (on) $('feedTitle').textContent = k.title;
     });
+  }
+
+  function itemMeta(it, withLag) {
+    var meta = el('span', 'meta');
+    meta.appendChild(el('span', 'kindName', KIND_NAME[it.kind] || it.kind));
+    meta.appendChild(el('span', 'strong', it.source));
+    meta.appendChild(el('span', 'mono', clock(it.ts)));
+    if (withLag) meta.appendChild(el('span', 'lag', lag(it)));
+    return meta;
   }
 
   function renderFeed() {
@@ -108,21 +238,19 @@
     var box = $('feed');
     box.textContent = '';
     list.forEach(function (it) {
-      var b = el('button', 'item' + (it.id === state.selected ? ' on' : '') + (state.fresh[it.id] ? ' fresh' : ''));
+      var b = el('button', 'item k-' + it.kind + (it.id === state.selected ? ' on' : '') + (state.fresh[it.id] ? ' fresh' : ''));
       b.type = 'button';
-      b.dataset.id = it.id;
       b.setAttribute('aria-pressed', String(it.id === state.selected));
-      var meta = el('span', 'meta');
-      meta.appendChild(el('span', 'mono', clock(it.ts)));
-      meta.appendChild(el('span', 'tag', KIND_TAG[it.kind] || it.kind));
-      meta.appendChild(el('span', 'strong', it.source));
-      meta.appendChild(el('span', 'lag', lag(it)));
-      b.appendChild(meta);
-      b.appendChild(el('span', 'text', it.text));
+      b.appendChild(iconBox(it.kind));
+      var body = el('span', 'body');
+      body.appendChild(itemMeta(it, true));
+      body.appendChild(el('span', 'text', it.text));
       var pills = el('span', 'pills');
       it.cashtags.forEach(function (c) { pills.appendChild(el('span', 'pill', '$' + c)); });
       keywordHits(it).forEach(function (k) { pills.appendChild(el('span', 'pill warn', 'Keyword: ' + k)); });
-      if (pills.childNodes.length) b.appendChild(pills);
+      if (state.counts[it.id]) pills.appendChild(el('span', 'pill quiet', state.counts[it.id] + (state.counts[it.id] === 1 ? ' message' : ' messages')));
+      if (pills.childNodes.length) body.appendChild(pills);
+      b.appendChild(body);
       b.addEventListener('click', function () { select(it.id); });
       box.appendChild(b);
     });
@@ -131,7 +259,7 @@
     $('count').textContent = list.length + (list.length === 1 ? ' item' : ' items');
   }
 
-  // ---------- detail + token matches ----------
+  // ---------- terminal: detail + token matches ----------
   function select(id) {
     var it = state.byId[id];
     if (!it) return;
@@ -213,7 +341,7 @@
       head.appendChild(el('span', 'name', t.name));
       head.appendChild(el('span', 'ca', shortAddr(t.address)));
       b.appendChild(head);
-      var stats = el('span', 'stats');
+      var stats = el('span', 'statsRow');
       [['Age', dur(t.ageSec)], ['Liquidity', money(t.liquidityUsd)], ['Market cap', money(t.marketCap)]].forEach(function (s) {
         var c = el('span');
         c.appendChild(el('i', null, s[0]));
@@ -250,6 +378,129 @@
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(tok.address).then(done, function () {});
   }
 
+  // ---------- breaking: rooms + chat ----------
+  function talkBadge(roomId) {
+    var n = state.counts[roomId] || 0;
+    var t = el('span', 'talk' + (n ? ' hot' : ''));
+    t.appendChild(icon('chat', 13));
+    t.appendChild(document.createTextNode(String(n)));
+    t.setAttribute('aria-label', n + (n === 1 ? ' message' : ' messages'));
+    return t;
+  }
+
+  function renderRooms() {
+    var box = $('rooms');
+    box.textContent = '';
+    var g = el('button', 'room general k-all' + (state.room === 'general' ? ' on' : ''));
+    g.type = 'button';
+    g.setAttribute('aria-pressed', String(state.room === 'general'));
+    g.appendChild(iconBox('chat'));
+    var gb = el('span', 'body');
+    gb.appendChild(el('span', 'text', 'General room'));
+    gb.appendChild(el('span', 'muted small', 'Talk about anything that is breaking'));
+    g.appendChild(gb);
+    g.appendChild(talkBadge('general'));
+    g.addEventListener('click', function () { openRoom('general'); });
+    box.appendChild(g);
+
+    var list = breakingList();
+    // Keep the open room on the list even after it ages out.
+    var open = state.byId[state.room];
+    if (open && list.indexOf(open) === -1) list = [open].concat(list);
+    list.forEach(function (it) {
+      var b = el('button', 'room k-' + it.kind + (state.room === it.id ? ' on' : ''));
+      b.type = 'button';
+      b.setAttribute('aria-pressed', String(state.room === it.id));
+      b.appendChild(iconBox(it.kind));
+      var body = el('span', 'body');
+      var meta = el('span', 'meta');
+      meta.appendChild(el('span', 'kindName', KIND_NAME[it.kind] || it.kind));
+      meta.appendChild(el('span', 'strong', it.source));
+      meta.appendChild(el('span', 'mono', ago(it.ts)));
+      body.appendChild(meta);
+      body.appendChild(el('span', 'text', it.text));
+      if (it.cashtags.length) {
+        var pills = el('span', 'pills');
+        it.cashtags.forEach(function (c) { pills.appendChild(el('span', 'pill', '$' + c)); });
+        body.appendChild(pills);
+      }
+      b.appendChild(body);
+      b.appendChild(talkBadge(it.id));
+      b.addEventListener('click', function () { openRoom(it.id); });
+      box.appendChild(b);
+    });
+    if (!list.length) box.appendChild(el('p', 'emptyBox', 'Nothing urgent yet. Items land here the moment they arrive.'));
+  }
+
+  function openRoom(room) {
+    if (room !== 'general' && !state.byId[room]) room = 'general';
+    state.room = room;
+    var it = state.byId[room];
+    $('roomTag').textContent = it ? (KIND_NAME[it.kind] || it.kind) + ' · ' + it.source + ' · ' + clock(it.ts) : 'General room';
+    $('roomTitle').textContent = it ? it.text : 'Everything breaking';
+    $('roomTokens').hidden = !it;
+    $('chatError').textContent = '';
+    renderRooms();
+    renderMsgs();
+    fetch('/api/chat?room=' + encodeURIComponent(room)).then(function (r) { return r.json(); }).then(function (data) {
+      state.msgs[room] = data.messages || [];
+      state.counts = data.counts || state.counts;
+      if (state.room === room) { renderMsgs(); renderRooms(); }
+    }).catch(function () {});
+  }
+
+  function renderMsgs() {
+    var box = $('msgs');
+    box.textContent = '';
+    var list = state.msgs[state.room] || [];
+    if (!list.length) box.appendChild(el('p', 'muted', 'No messages yet. Start the conversation.'));
+    list.forEach(function (m) {
+      var row = el('div', 'msg' + (m.name === state.name ? ' me' : ''));
+      var who = el('span', 'who');
+      who.appendChild(el('b', null, m.name));
+      who.appendChild(document.createTextNode(clock(m.ts)));
+      row.appendChild(who);
+      row.appendChild(el('span', 'say', m.text));
+      box.appendChild(row);
+    });
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function onChat(m) {
+    if (!m || !m.room || state.seenMsg[m.id]) return;
+    state.seenMsg[m.id] = true;
+    var list = state.msgs[m.room];
+    // A message already in a fetched list has been counted by that fetch.
+    if (list && list.some(function (x) { return x.id === m.id; })) return;
+    state.counts[m.room] = (state.counts[m.room] || 0) + 1;
+    if (list) list.push(m);
+    if (state.view === 'breaking') {
+      renderRooms();
+      if (m.room === state.room) renderMsgs();
+    }
+  }
+
+  function sendChat(e) {
+    e.preventDefault();
+    var text = $('msg').value.trim();
+    var name = $('handle').value.trim() || state.name;
+    if (!text) return;
+    state.name = name;
+    save('nt.name', name);
+    $('chatError').textContent = '';
+    // Clear straight away so fast typers do not run two messages together; put it back if sending fails.
+    $('msg').value = '';
+    var restore = function () { if (!$('msg').value) $('msg').value = text; };
+    fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ room: state.room, name: name, text: text })
+    }).then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d }; }); }).then(function (res) {
+      if (!res.ok) { $('chatError').textContent = res.d.error || 'Message was not sent.'; restore(); return; }
+      onChat(res.d.message);
+    }).catch(function () { $('chatError').textContent = 'Message was not sent. Check your connection.'; restore(); });
+  }
+
   // ---------- keyword alerts ----------
   function renderKeywords() {
     var box = $('keywords');
@@ -284,6 +535,11 @@
 
   // ---------- wiring ----------
   $('q').addEventListener('input', function (e) { state.query = e.target.value.trim(); renderFeed(); });
+  $('alertsBtn').addEventListener('click', function () {
+    var open = $('alerts').hidden;
+    $('alerts').hidden = !open;
+    $('alertsBtn').setAttribute('aria-expanded', String(open));
+  });
   $('kwForm').addEventListener('submit', function (e) {
     e.preventDefault();
     var v = $('kw').value.trim();
@@ -298,6 +554,14 @@
     if (v && it) fetchMatches(it, v);
   });
   $('copy').addEventListener('click', copyAddress);
+  $('chatForm').addEventListener('submit', sendChat);
+  $('handle').value = state.name;
+  // "Discuss in Breaking" carries the selected item across; "See matching tokens" carries it back.
+  $('dTalk').addEventListener('click', function () { if (state.selected) state.room = state.selected; });
+  $('roomTokens').addEventListener('click', function () {
+    var id = state.room;
+    setTimeout(function () { if (state.byId[id]) select(id); }, 0);
+  });
   $('sound').checked = state.sound;
   $('soundAll').checked = state.soundAll;
   $('sound').addEventListener('change', function (e) { state.sound = e.target.checked; save('nt.sound', state.sound); if (state.sound) beep(true); });
@@ -306,7 +570,7 @@
   document.addEventListener('keydown', function (e) {
     var typing = /^(INPUT|TEXTAREA)$/.test(e.target.tagName);
     if (typing) { if (e.key === 'Escape') e.target.blur(); return; }
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (state.view !== 'terminal' || e.metaKey || e.ctrlKey || e.altKey) return;
     var k = e.key.toLowerCase();
     if (k === '/') { e.preventDefault(); $('q').focus(); return; }
     if (k === 'j' || k === 'k') {
@@ -333,19 +597,32 @@
   }
 
   function start() {
-    renderKinds(); renderKeywords(); renderFeed();
+    renderKeywords();
+    window.addEventListener('hashchange', route);
+    route();
     fetch('/api/feed').then(function (r) { return r.json(); }).then(function (data) {
       $('demoBadge').hidden = !data.demo;
       (data.items || []).forEach(function (it) { addItem(it, false); });
-      renderKinds(); renderFeed();
+      render();
+    }).catch(function () {});
+    fetch('/api/chat?room=general').then(function (r) { return r.json(); }).then(function (data) {
+      state.msgs.general = data.messages || [];
+      state.counts = data.counts || {};
+      render();
+      if (state.view === 'breaking' && state.room === 'general') renderMsgs();
     }).catch(function () {});
     var es = new EventSource('/api/stream');
     es.onopen = function () { setLive(true); };
     es.onerror = function () { setLive(false); };
     es.addEventListener('item', function (e) {
       try { addItem(JSON.parse(e.data), true); } catch (err) { return; }
-      renderKinds(); renderFeed();
+      render();
     });
+    es.addEventListener('chat', function (e) {
+      try { onChat(JSON.parse(e.data)); } catch (err) { /* ignore malformed */ }
+    });
+    // Keeps "2m ago" labels and the hourly counts honest.
+    setInterval(function () { renderNav(); if (state.view === 'breaking') renderRooms(); }, 30000);
   }
   start();
 })();

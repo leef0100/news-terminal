@@ -16,7 +16,14 @@ npm start        # live news feeds + live token search
 
 Then open http://localhost:3000. `npm test` runs the tests.
 
-## What v1 does
+## Pages
+
+- **Home**: landing page with a moving collage built from the live headlines.
+- **Terminal**: the feed, category tabs, token matching and quick buy.
+- **Breaking**: the most immediate items (tickers, listings, X posts, urgent headlines from
+  the last hour), each with its own live chat room, plus a general room.
+
+## What it does
 
 - **Live feed** pushed to the browser as items arrive (no refresh), newest first, with the
   delay between publication and arrival shown on each live item.
@@ -31,6 +38,13 @@ Then open http://localhost:3000. `npm test` runs the tests.
   (DexScreener for tokens not launched there). No wallet code and no custody in v1.
 - **Keyword alerts** with optional sound, a feed filter, and keyboard control
   (`J`/`K` move, `C` copy address, `Enter` open token, `/` filter).
+
+## Chat limits to know about
+
+Chat has no accounts and no moderation: anyone can post under any name. Messages are kept
+in memory, so they vanish when the server restarts. Posting is rate-limited per address
+(5 messages per 10 seconds) and messages are capped at 280 characters. Add sign-in,
+moderation and a database before opening this to the public.
 
 ## Not yet verified against live services
 
@@ -64,9 +78,10 @@ src/server.js         web server, API, live stream
 src/ingest/           RSS reader, poller, demo data, X slot
 src/enrich.js         kind, cashtags, search terms
 src/tokens.js         token search, ranking, copycat flags
+src/chat.js           Breaking-page chat rooms
 public/               the terminal UI (no build step)
 test/                 tests
 ```
 
 API: `GET /api/feed`, `GET /api/stream` (Server-Sent Events), `GET /api/matches?itemId=&q=`,
-`GET /api/health`.
+`GET /api/health`, `GET /api/chat?room=`, `POST /api/chat`.

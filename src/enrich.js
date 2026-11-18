@@ -6,6 +6,9 @@ const LISTING = /\b(to list|will list|lists|listing|listed on|adds support for|d
 const MACRO_CASED = /\b(CPI|FOMC|Fed|ECB|PCE|GDP)\b/;
 const MACRO_WORDS = /\b(federal reserve|rate cuts?|rate hikes?|interest rates?|inflation|jobs report|payrolls|treasury yields?|tariffs?)\b/i;
 
+// Words that mark a headline as urgent enough for the Breaking page.
+const URGENT = /\b(breaking|just in|urgent|halts?|halted|hack(ed|s)?|exploit(ed)?|approv(es|ed|al)|sues|sued|bans?|banned|crash(es|ed)?|surg(es|ed|ing)|plung(es|ed|ing)|soars?|tumbl(es|ed)|liquidat(ed|ions?)|delist(s|ed|ing)?|outage|emergency)\b/i;
+
 const STOP = new Set(
   ('The A An And Or But For Nor With From Into Over After Before Why How What When Where Who Its His Her ' +
     'Their This That These Those New Says Said Will Has Have Had Are Was Were Is Be Been Not Now More Most ' +
@@ -52,17 +55,20 @@ export function classify(text, source) {
 
 export function enrich(raw, source) {
   const text = String(raw.text || '').replace(/\s+/g, ' ').trim();
+  const kind = classify(text, source);
+  const cashtags = extractCashtags(text);
   return {
     id: raw.id,
     ts: raw.ts,
     seenAt: raw.seenAt,
     backfill: Boolean(raw.backfill),
-    kind: classify(text, source),
+    kind,
+    breaking: kind === 'listing' || kind === 'x' || cashtags.length > 0 || URGENT.test(text),
     sourceId: source.id,
     source: source.name,
     text,
     url: /^https?:\/\//i.test(raw.url || '') ? raw.url : null,
-    cashtags: extractCashtags(text),
+    cashtags,
     terms: extractTerms(text)
   };
 }

@@ -5,92 +5,165 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>News Terminal</title>
 <link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-<header class="top">
-  <div class="brand">
+<header class="nav">
+  <a class="brand" href="#home">
     <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"></path></svg>
     <span>News Terminal</span>
-  </div>
-  <div class="search">
-    <label for="q" class="sr">Filter the feed</label>
-    <input id="q" type="search" placeholder="Filter feed: ticker, word, source   ( / )" autocomplete="off">
-  </div>
+  </a>
+  <nav class="tabs" aria-label="Sections">
+    <a href="#home" data-view="home">Home</a>
+    <a href="#terminal" data-view="terminal">Terminal</a>
+    <a href="#breaking" data-view="breaking">Breaking <span id="breakingCount" class="count" hidden></span></a>
+  </nav>
   <div class="status">
     <span id="live" class="live off"><span class="dot" aria-hidden="true"></span><span id="liveText">Connecting</span></span>
     <span id="demoBadge" class="badge warn" hidden>Demo data</span>
   </div>
 </header>
 
-<div class="cols">
-  <nav class="rail" aria-label="Sources and alerts">
-    <section>
-      <h2 class="eyebrow">Sources</h2>
-      <div id="kinds" class="stack"></div>
-    </section>
-    <section>
+<!-- HOME -->
+<section id="view-home" class="view home">
+  <div class="glow" aria-hidden="true"></div>
+  <div id="collage" class="collage" aria-hidden="true"></div>
+  <div class="hero">
+    <p class="kicker">Live market news</p>
+    <h1>News at <em>trading</em> speed.</h1>
+    <p class="lede">Headlines, listings and macro in one live feed, with the tokens they move and the copycats flagged.</p>
+    <div class="cta">
+      <a class="btn primary" href="#terminal">Open the terminal</a>
+      <a class="btn ghost" href="#breaking">See what's breaking</a>
+    </div>
+    <dl class="stats">
+      <div><dt>In the feed</dt><dd id="statItems">0</dd></div>
+      <div><dt>Sources</dt><dd id="statSources">0</dd></div>
+      <div><dt>Breaking this hour</dt><dd id="statBreaking">0</dd></div>
+    </dl>
+  </div>
+  <div class="ticker" aria-label="Latest headlines"><div id="ticker" class="tickerTrack"></div></div>
+</section>
+
+<!-- TERMINAL -->
+<section id="view-terminal" class="view" hidden>
+  <div class="toolbar">
+    <div id="kinds" class="kinds" role="group" aria-label="Categories"></div>
+    <div class="tools">
+      <div class="search">
+        <label for="q" class="sr">Filter the feed</label>
+        <input id="q" type="search" placeholder="Filter: ticker, word, source  ( / )" autocomplete="off">
+      </div>
+      <button id="alertsBtn" type="button" class="btn" aria-expanded="false" aria-controls="alerts">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+        Alerts
+      </button>
+    </div>
+  </div>
+  <div id="alerts" class="alerts" hidden>
+    <div>
       <h2 class="eyebrow">Keyword alerts</h2>
       <div id="keywords" class="chips"></div>
       <form id="kwForm" class="row">
         <label for="kw" class="sr">Add a keyword alert</label>
-        <input id="kw" type="text" placeholder="Keyword" maxlength="30" autocomplete="off">
+        <input id="kw" type="text" placeholder="Add a keyword" maxlength="30" autocomplete="off">
         <button type="submit" class="btn">Add</button>
       </form>
-    </section>
-    <section>
-      <h2 class="eyebrow">Alerts</h2>
-      <label class="check"><input id="sound" type="checkbox"> Sound on keyword hit</label>
-      <label class="check"><input id="soundAll" type="checkbox"> Sound on every new item</label>
-    </section>
-    <section class="hint">
+    </div>
+    <div>
+      <h2 class="eyebrow">Sound</h2>
+      <label class="check"><input id="sound" type="checkbox"> On keyword hit</label>
+      <label class="check"><input id="soundAll" type="checkbox"> On every new item</label>
+    </div>
+    <div>
       <h2 class="eyebrow">Keys</h2>
-      <p><kbd>J</kbd> <kbd>K</kbd> move · <kbd>C</kbd> copy address · <kbd>Enter</kbd> open token · <kbd>/</kbd> filter</p>
-    </section>
-  </nav>
-
-  <main class="feed">
-    <div class="feedHead">
-      <h1>Live feed</h1>
-      <span id="count" class="muted"></span>
+      <p class="keys"><kbd>J</kbd> <kbd>K</kbd> move · <kbd>C</kbd> copy address · <kbd>Enter</kbd> open token · <kbd>/</kbd> filter</p>
     </div>
-    <div id="feed" class="stack" aria-live="polite"></div>
-    <p id="empty" class="emptyBox" hidden>Nothing yet. New items appear here as they arrive.</p>
-  </main>
+  </div>
 
-  <aside class="detail" aria-label="Selected item">
-    <div id="detailEmpty" class="emptyBox">Select an item to see matching tokens.</div>
-    <div id="detail" hidden>
-      <div class="card">
-        <div class="meta"><span id="dTime" class="mono"></span><span id="dSource" class="strong"></span></div>
-        <div id="dText" class="dText"></div>
-        <a id="dLink" target="_blank" rel="noopener noreferrer" hidden>Open original</a>
+  <div class="cols">
+    <main class="feed">
+      <div class="feedHead">
+        <h1 id="feedTitle">Live feed</h1>
+        <span id="count" class="muted"></span>
       </div>
+      <div id="feed" class="stack" aria-live="polite"></div>
+      <p id="empty" class="emptyBox" hidden>Nothing here yet. New items appear as they arrive.</p>
+    </main>
 
-      <h2>Matching tokens</h2>
-      <p class="muted small">Tokens that existed before the item come first. Anything created after it is flagged.</p>
-      <div id="terms" class="chips"></div>
-      <form id="termForm" class="row">
-        <label for="term" class="sr">Search tokens for this item</label>
-        <input id="term" type="text" placeholder="Search a ticker or name" maxlength="40" autocomplete="off">
-        <button type="submit" class="btn">Search</button>
-      </form>
-      <div id="matchState" class="emptyBox" hidden></div>
-      <div id="matches" class="stack"></div>
-
-      <div id="buy" class="card" hidden>
-        <h2>Quick buy</h2>
-        <div class="addr"><span id="bAddr" class="mono"></span></div>
-        <div class="row">
-          <button id="copy" type="button" class="btn grow">Copy address</button>
-          <a id="chart" class="btn grow" target="_blank" rel="noopener noreferrer">Chart</a>
+    <aside class="detail" aria-label="Selected item">
+      <div id="detailEmpty" class="emptyBox">Select an item to see matching tokens.</div>
+      <div id="detail" hidden>
+        <div class="card">
+          <div class="meta"><span id="dTime" class="mono"></span><span id="dSource" class="strong"></span></div>
+          <div id="dText" class="dText"></div>
+          <div class="row wrap">
+            <a id="dLink" class="link" target="_blank" rel="noopener noreferrer" hidden>Open original</a>
+            <a id="dTalk" class="link" href="#breaking">Discuss in Breaking</a>
+          </div>
         </div>
-        <a id="open" class="btn primary" target="_blank" rel="noopener noreferrer">Open token</a>
-        <p class="muted small">Check the address before you buy. Flagged tokens were created after the news.</p>
+
+        <h2>Matching tokens</h2>
+        <p class="muted small">Tokens that existed before the item come first. Anything created after it is flagged.</p>
+        <div id="terms" class="chips"></div>
+        <form id="termForm" class="row">
+          <label for="term" class="sr">Search tokens for this item</label>
+          <input id="term" type="text" placeholder="Search a ticker or name" maxlength="40" autocomplete="off">
+          <button type="submit" class="btn">Search</button>
+        </form>
+        <div id="matchState" class="emptyBox" hidden></div>
+        <div id="matches" class="stack"></div>
+
+        <div id="buy" class="card" hidden>
+          <h2>Quick buy</h2>
+          <div class="addr"><span id="bAddr" class="mono"></span></div>
+          <div class="row">
+            <button id="copy" type="button" class="btn grow">Copy address</button>
+            <a id="chart" class="btn grow" target="_blank" rel="noopener noreferrer">Chart</a>
+          </div>
+          <a id="open" class="btn primary" target="_blank" rel="noopener noreferrer">Open token</a>
+          <p class="muted small">Check the address before you buy. Flagged tokens were created after the news.</p>
+        </div>
       </div>
+    </aside>
+  </div>
+</section>
+
+<!-- BREAKING -->
+<section id="view-breaking" class="view" hidden>
+  <div class="breakHead">
+    <div>
+      <p class="kicker"><span class="pulse" aria-hidden="true"></span> Breaking</p>
+      <h1 class="display">What's moving right now</h1>
     </div>
-  </aside>
-</div>
+    <p class="muted">The most immediate items, newest first. Pick one to talk about it.</p>
+  </div>
+  <div class="cols">
+    <main class="feed">
+      <div id="rooms" class="stack"></div>
+    </main>
+    <aside class="chat" aria-label="Chat">
+      <div class="chatHead">
+        <span id="roomTag" class="eyebrow">General room</span>
+        <div id="roomTitle" class="roomTitle">Everything breaking</div>
+        <a id="roomTokens" class="link" href="#terminal" hidden>See matching tokens</a>
+      </div>
+      <div id="msgs" class="msgs" aria-live="polite"></div>
+      <form id="chatForm" class="chatForm">
+        <label for="handle" class="sr">Your name</label>
+        <input id="handle" type="text" maxlength="20" placeholder="Name" autocomplete="off">
+        <label for="msg" class="sr">Message</label>
+        <input id="msg" type="text" maxlength="280" placeholder="Say something" autocomplete="off">
+        <button type="submit" class="btn primary small">Send</button>
+      </form>
+      <p id="chatError" class="chatError" role="status"></p>
+    </aside>
+  </div>
+</section>
+
 <script src="app.js"></script>
 </body>
 </html>

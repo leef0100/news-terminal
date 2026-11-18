@@ -6,6 +6,7 @@ import { createStore } from './store.js';
 import { createPoller } from './ingest/poller.js';
 import { createTokenMatcher } from './tokens.js';
 import { startDemo, demoFetch } from './ingest/demo.js';
+import { createChat } from './chat.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -14,8 +15,11 @@ export function createApp({ demo = false, config } = {}) {
   const matcher = createTokenMatcher(demo ? { fetchImpl: demoFetch() } : {});
   const poller = demo ? null : createPoller({ sources: config.sources, store, pollSeconds: config.pollSeconds });
 
+  const chat = createChat({ hasRoom: (room) => room === 'general' || Boolean(store.get(room)) });
+
   const app = express();
   app.disable('x-powered-by');
+  app.use(express.json({ limit: '2kb' }));
   app.use(express.static(path.join(root, 'public')));
 
   app.get('/api/feed', (req, res) => {
@@ -41,25 +45,46 @@ export function createApp({ demo = false, config } = {}) {
     }
   });
 
-  // Live push of new items (Server-Sent Events).
+  // Breaking-page chat. `room` is "general" or a feed item id.
+  app.get('/api/chat', (req, res) => {
+    res.json({ messages: chat.list(String(req.query.room || 'general')), counts: chat.counts() });
+  });
+
+  app.post('/api/chat', (req, res) => {
+    const b = req.body && typeof req.body === 'object' ? req.body : {};
+    const out = chat.post({ room: b.room, name: b.name, text: b.text, ip: req.ip });
+    if (out.error) return res.status(out.status).json({ error: out.error });
+    res.json({ message: out.msg });
+  });
+
+  // Live push of new items and chat messages (Server-Sent Events).
   app.get('/api/stream', (req, res) => {
     res.set({ 'content-type': 'text/event-stream', 'cache-control': 'no-cache, no-transform', connection: 'keep-alive', 'x-accel-buffering': 'no' });
     res.flushHeaders();
     res.write('retry: 2000\n\n');
     const send = (item) => res.write(`event: item\ndata: ${JSON.stringify(item)}\n\n`);
     const beat = setInterval(() => res.write(': ping\n\n'), 15000);
+    const sendChat = (msg) => res.write(`event: chat\ndata: ${JSON.stringify(msg)}\n\n`);
     store.on(send);
+    chat.on(sendChat);
     req.on('close', () => {
       clearInterval(beat);
       store.off(send);
+      chat.off(sendChat);
     });
   });
 
   return {
     app,
     store,
+    chat,
     start() {
-      if (demo) return startDemo(store);
+      if (demo) {
+        ['Sample chat: anyone watching the otter post?', 'Sample chat: flagged copies showed up within seconds', 'Sample chat: waiting for the inflation print'].forEach((text, i) =>
+          chat.post({ room: 'general', name: 'demo_user_' + (i + 1), text, ip: 'demo-' + i })
+        );
+        return startDemo(store);
+      }
       poller.start();
       return () => poller.stop();
     }
