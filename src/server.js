@@ -7,6 +7,9 @@ import { createPoller } from './ingest/poller.js';
 import { createTokenMatcher } from './tokens.js';
 import { startDemo, demoFetch } from './ingest/demo.js';
 import { createChat } from './chat.js';
+import { createHyperliquid, validCoin, INTERVALS } from './hyperliquid.js';
+import { createRadar } from './radar.js';
+import { demoMarketFetch } from './ingest/demo-markets.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
@@ -15,12 +18,19 @@ export function createApp({ demo = false, config } = {}) {
   const matcher = createTokenMatcher(demo ? { fetchImpl: demoFetch() } : {});
   const poller = demo ? null : createPoller({ sources: config.sources, store, pollSeconds: config.pollSeconds });
 
+  const marketFetch = demo ? demoMarketFetch() : fetch;
+  const hl = createHyperliquid({ fetchImpl: marketFetch });
+  const radar = createRadar({ fetchImpl: marketFetch, hl });
   const chat = createChat({ hasRoom: (room) => room === 'general' || Boolean(store.get(room)) });
 
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '2kb' }));
   app.use(express.static(path.join(root, 'public')));
+  // The charting library is served from the installed package, so no outside CDN is needed.
+  app.get('/vendor/lightweight-charts.js', (_req, res) => {
+    res.sendFile(path.join(root, 'node_modules', 'lightweight-charts', 'dist', 'lightweight-charts.standalone.production.js'));
+  });
 
   app.get('/api/feed', (req, res) => {
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 150, 1), 500);
@@ -44,6 +54,39 @@ export function createApp({ demo = false, config } = {}) {
       res.status(502).json({ tokens: [], terms, error: String(err.message || err) });
     }
   });
+
+  // Radar: cross-exchange positioning, funding, open interest and large trades.
+  app.get('/api/radar', async (_req, res) => {
+    try {
+      res.json({ demo, ...(await radar.snapshot()) });
+    } catch (err) {
+      res.status(502).json({ error: String(err.message || err) });
+    }
+  });
+
+  // Markets page, backed by Hyperliquid's public data.
+  const market = (fn) => async (req, res) => {
+    const coin = String(req.query.coin || 'BTC');
+    if (!validCoin(coin)) return res.status(400).json({ error: 'Unknown market' });
+    try {
+      res.json(await fn(coin, req));
+    } catch (err) {
+      res.status(502).json({ error: String(err.message || err) });
+    }
+  };
+  app.get('/api/markets', async (_req, res) => {
+    try {
+      res.json({ demo, markets: await hl.markets() });
+    } catch (err) {
+      res.status(502).json({ error: String(err.message || err) });
+    }
+  });
+  app.get('/api/markets/book', market((coin) => hl.book(coin)));
+  app.get('/api/markets/trades', market(async (coin) => ({ trades: await hl.trades(coin) })));
+  app.get('/api/markets/candles', market(async (coin, req) => {
+    const interval = Object.hasOwn(INTERVALS, String(req.query.interval)) ? String(req.query.interval) : '15m';
+    return { interval, candles: await hl.candles(coin, interval) };
+  }));
 
   // Breaking-page chat. `room` is "general" or a feed item id.
   app.get('/api/chat', (req, res) => {
@@ -98,6 +141,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const port = Number(process.env.PORT) || 3000;
   app.listen(port, () => {
     start();
-    console.log(`floor.xyz${demo ? ' (demo data)' : ''} running at http://localhost:${port}`);
+    console.log(`Halftone${demo ? ' (demo data)' : ''} running at http://localhost:${port}`);
   });
 }

@@ -46,7 +46,7 @@ export function parseFeed(xml, sourceId) {
 }
 
 export async function fetchFeed(source, { fetchImpl = fetch, timeoutMs = 8000, cache = {} } = {}) {
-  const headers = { 'user-agent': 'floor.xyz/0.1', accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml' };
+  const headers = { 'user-agent': 'halftone/0.1', accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml' };
   if (cache.etag) headers['if-none-match'] = cache.etag;
   if (cache.lastModified) headers['if-modified-since'] = cache.lastModified;
   const res = await fetchImpl(source.url, { headers, signal: AbortSignal.timeout(timeoutMs) });

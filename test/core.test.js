@@ -177,3 +177,63 @@ test('impact: dramatic headlines outrank routine ones', () => {
   assert.ok(impactOf('Board ousts founder in surprise vote after record loss', false) > impactOf('Stocks plunge', false));
   assert.equal(impactOf('Quarterly review of custody rules published', false), 0);
 });
+
+import { createHyperliquid } from '../src/hyperliquid.js';
+import { createRadar, readTilt } from '../src/radar.js';
+import { demoMarketFetch } from '../src/ingest/demo-markets.js';
+
+test('hyperliquid adapter: markets, book, candles and trades parse and cache', async () => {
+  let calls = 0;
+  const base = demoMarketFetch(() => 1_700_000_000_000);
+  const hl = createHyperliquid({ fetchImpl: (u, i) => { calls++; return base(u, i); }, now: () => 1_700_000_000_000 });
+  const markets = await hl.markets();
+  assert.equal(markets[0].coin, 'BTC');
+  assert.ok(markets[0].mark > 0 && markets[0].openInterestUsd > 0);
+  await hl.markets();
+  assert.equal(calls, 1);
+  const book = await hl.book('ETH');
+  assert.ok(book.bids[0].px < book.asks[0].px);
+  assert.ok(book.bids[0].px > book.bids[1].px && book.asks[0].px < book.asks[1].px);
+  const candles = await hl.candles('BTC', '1h');
+  assert.ok(candles.length > 100);
+  assert.ok(candles.every((c, i) => c.high >= Math.max(c.open, c.close) && c.low <= Math.min(c.open, c.close) && (i === 0 || c.time > candles[i - 1].time)));
+  const trades = await hl.trades('SOL');
+  assert.ok(trades.length && trades[0].time >= trades[trades.length - 1].time);
+  await assert.rejects(() => hl.candles('BTC', '7m'));
+  const down = createHyperliquid({ fetchImpl: async () => ({ ok: false, status: 500 }) });
+  await assert.rejects(() => down.markets(), /500/);
+});
+
+test('radar: blends venues, converts funding, and survives a venue being blocked', async () => {
+  const t = 1_700_000_000_000;
+  const base = demoMarketFetch(() => t);
+  const fetchImpl = (u, i) => (String(u).includes('bybit') ? Promise.resolve({ ok: false, status: 403 }) : base(u, i));
+  const hl = createHyperliquid({ fetchImpl, now: () => t });
+  const radar = createRadar({ fetchImpl, hl, now: () => t });
+  const snap = await radar.snapshot();
+  const venue = (n) => snap.venues.find((v) => v.name === n);
+  assert.equal(venue('Binance').ok, true);
+  assert.equal(venue('Bybit').ok, false);
+  assert.match(venue('Bybit').error, /403/);
+  assert.equal(venue('Papertrade').ok, false);
+  const eth = snap.coins.find((c) => c.coin === 'ETH');
+  assert.ok(eth.price > 0);
+  assert.ok(eth.positioning.every((p) => Math.abs(p.longPct + p.shortPct - 100) < 0.02));
+  assert.ok(eth.blendedLongPct > 60 && eth.tilt === 'long');
+  const hlFunding = eth.funding.find((f) => f.venue === 'Hyperliquid');
+  const bnFunding = eth.funding.find((f) => f.venue === 'Binance');
+  assert.ok(Math.abs(hlFunding.rate8h - bnFunding.rate8h) < 1e-9, 'hourly funding is scaled to 8h');
+  assert.ok(Math.abs(bnFunding.annualPct - bnFunding.rate8h * 109500) < 0.01);
+  assert.ok(eth.openInterest.some((o) => o.venue === 'Binance') && !eth.openInterest.some((o) => o.venue === 'Bybit'));
+  assert.ok(eth.coinbasePremiumPct > 0);
+  assert.ok(snap.bigTrades.every((x) => x.usd >= snap.bigTradeUsd));
+  assert.equal(await radar.snapshot(), snap, 'cached within the ttl');
+});
+
+test('tilt wording', () => {
+  assert.equal(readTilt(72, 0.0001).tilt, 'long');
+  assert.match(readTilt(72, 0.0001).note, /Crowded long: 72%.*Longs are paying/);
+  assert.match(readTilt(30, -0.0001).note, /Crowded short: 70%.*Shorts are paying/);
+  assert.equal(readTilt(50, null).tilt, 'balanced');
+  assert.equal(readTilt(null, null).tilt, 'unknown');
+});

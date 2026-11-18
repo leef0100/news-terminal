@@ -1,4 +1,4 @@
-# floor.xyz
+# Halftone
 
 A real-time news feed for memecoin traders. Each item shows the tickers it mentions, and
 selecting one lists the matching Solana tokens with the real one first and copycats
@@ -25,6 +25,33 @@ Then open http://localhost:3000. `npm test` runs the tests.
   Politics, World), token matching and quick buy.
 - **Breaking**: the most immediate items (tickers, listings, X posts, urgent headlines from
   the last hour), each with its own live chat room, plus a general room.
+
+- **Radar**: how traders are positioned across venues. Long/short split per coin (blended and
+  per venue), a funding-rate heatmap, open interest, the Coinbase premium, and a tape of
+  large Hyperliquid trades.
+- **Markets**: candle chart, order book, recent trades and market stats (mark, oracle,
+  funding, open interest, volume) for any Hyperliquid perpetual.
+- **Wallet connect**: Phantom, Solflare and Backpack on Solana, plus any Ethereum-style
+  wallet that announces itself (MetaMask, Coinbase Wallet, Rabby and others). Connect only:
+  it reads the public address and never requests a signature or a transaction. Because
+  nothing is signed, the address is not proof of ownership.
+
+## Where the Radar and Markets data comes from
+
+All of it is public and needs no key, fetched by the server and cached for a few seconds.
+
+| Venue | What is used | Notes |
+|---|---|---|
+| Binance futures | long/short account ratio, top-trader position ratio, funding, open interest | Not served to some regions, including the US; shows as unavailable there |
+| Bybit | long/short account ratio, funding, open interest | Same regional limits |
+| Hyperliquid | funding, open interest, large trades, plus everything on the Markets page | |
+| Coinbase | spot price, for the Coinbase premium | Spot only, so it has no long/short data |
+| Papertrade | nothing yet | It publishes no public data feed; listed as unavailable |
+
+Things this does not do: it does not copy Coinglass's heatmaps (their data is licensed; a
+paid Coinglass API key would be the way to add liquidation heatmaps), and the Markets page
+is this app's own design drawn from Hyperliquid's data, not a copy of Hyperliquid's
+interface. Long/short ratios count accounts, not money, and say nothing about who is right.
 
 ## What it does
 
@@ -57,6 +84,8 @@ This was built and tested where outside sites could not be reached, so:
 - The feed URLs in `config/sources.json` have not been fetched for real. A feed that fails
   is logged and skipped; check `http://localhost:3000/api/health` to see each feed's state
   and fix or remove any that fail.
+- The exchange endpoints (Binance, Bybit, Hyperliquid, Coinbase) are used as their public
+  documentation describes and were tested against data in those shapes, not the live services.
 - Token search uses DexScreener's public search endpoint as documented. It was tested
   against data in that shape, not against the live service.
 
@@ -83,9 +112,12 @@ src/ingest/           RSS reader, poller, demo data, X slot
 src/enrich.js         kind, cashtags, search terms
 src/tokens.js         token search, ranking, copycat flags
 src/chat.js           Breaking-page chat rooms
+src/radar.js          cross-exchange positioning snapshot
+src/hyperliquid.js    Hyperliquid market data (book, candles, trades)
 public/               the terminal UI (no build step)
 test/                 tests
 ```
 
 API: `GET /api/feed`, `GET /api/stream` (Server-Sent Events), `GET /api/matches?itemId=&q=`,
-`GET /api/health`, `GET /api/chat?room=`, `POST /api/chat`.
+`GET /api/health`, `GET /api/chat?room=`, `POST /api/chat`,
+`GET /api/radar`, `GET /api/markets`, `GET /api/markets/book|candles|trades?coin=`.

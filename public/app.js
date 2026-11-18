@@ -24,6 +24,7 @@
     world: 'M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18z M3 12h18 M12 3c3 3 3 15 0 18 M12 3c-3 3-3 15 0 18',
     chat: 'M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'
   };
+  var VIEWS = ['home', 'terminal', 'breaking', 'radar', 'markets'];
   var MAX_ITEMS = 300;
   var HOUR = 3600000;
 
@@ -139,9 +140,9 @@
   // ---------- routing ----------
   function route() {
     var v = (location.hash || '#home').slice(1);
-    if (['home', 'terminal', 'breaking'].indexOf(v) === -1) v = 'home';
+    if (VIEWS.indexOf(v) === -1) v = 'home';
     state.view = v;
-    ['home', 'terminal', 'breaking'].forEach(function (name) { $('view-' + name).hidden = name !== v; });
+    VIEWS.forEach(function (name) { $('view-' + name).hidden = name !== v; });
     document.querySelectorAll('.tabs a').forEach(function (a) {
       var on = a.dataset.view === v;
       a.className = on ? 'on' : '';
@@ -150,6 +151,8 @@
     render();
     if (v === 'breaking') openRoom(state.room);
     window.scrollTo(0, 0);
+    // Radar and Markets live in their own files and start or stop on this signal.
+    document.dispatchEvent(new CustomEvent('nt:view', { detail: v }));
   }
 
   function render() {
