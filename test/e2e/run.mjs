@@ -76,7 +76,7 @@ check('Esc returns to top stories', await p.$eval('#top', (n) => !n.hidden));
 await p.evaluate(() => [...document.querySelectorAll('#feed .item')].filter((n) => n.textContent.includes('$OTTER')).pop().querySelector('.itemMain').click());
 await p.waitForSelector('.tok');
 const toks = await p.$$eval('.tok', (n) => n.map((x) => x.innerText.replace(/\n+/g, ' | ')));
-check('token matches: real one first, copies flagged', toks.length === 3 && /Existed before/.test(toks[0]) && /Created .* after this story/.test(toks[1]), toks[1]);
+check('token matches: real one first, copies flagged', toks.length === 3 && /Trading before this story/.test(toks[0]) && /Started trading .* after this story/.test(toks[1]), toks[1]);
 await p.click('.kind.k-business');
 check('topic filter', await p.$eval('#feedTitle', (n) => n.textContent) === 'Business' && await p.$$eval('#feed .item', (n) => n.length > 0 && n.every((x) => x.classList.contains('k-business') || x.textContent.includes('more source'))));
 await p.click('.kind.k-all');
@@ -184,6 +184,44 @@ wss.close();
 
 await m.close();
 await p.bringToFront();
+// ----- keyboard focus survives a live update -----
+await p.goto(BASE + '/#news'); await p.waitForSelector('#feed .itemMain');
+await p.evaluate(() => document.querySelectorAll('#feed .itemMain')[2].focus());
+const focused = await p.evaluate(() => document.activeElement.dataset.fk);
+const rowsBefore = await p.$eval('#count', (n) => n.textContent);
+await p.waitForFunction((c) => document.getElementById('count').textContent !== c, { timeout: 20000 }, rowsBefore);
+check('keyboard focus stays on the same story when a new one arrives', await p.evaluate((k) => document.activeElement.dataset.fk === k, focused), focused);
+
+// ----- a failed first load recovers by itself -----
+const flaky = await b.newPage(); await flaky.bringToFront();
+await flaky.setRequestInterception(true);
+let failedOnce = false;
+flaky.on('request', (r) => { if (!failedOnce && r.url().endsWith('/api/feed')) { failedOnce = true; r.respond({ status: 502, contentType: 'application/json', body: '{"error":"x"}' }); } else r.continue(); });
+await flaky.goto(BASE + '/#news', { waitUntil: 'domcontentloaded' });
+await flaky.waitForSelector('#feed .itemMain', { timeout: 15000 });
+check('a failed first load is retried until the feed appears', failedOnce && (await flaky.$$('#feed .item')).length > 5);
+await flaky.close();
+
+// ----- a server at its connection limit: the page polls instead, chat included -----
+const fullSvc = await createApp({ demo: true, sseMax: 0 });
+const fullServer = await new Promise((r) => { const s2 = fullSvc.app.listen(0, '127.0.0.1', () => r(s2)); });
+await fullSvc.start();
+const FULL = 'http://127.0.0.1:' + fullServer.address().port;
+const q = await b.newPage(); await q.bringToFront();
+await q.goto(FULL + '/#news', { waitUntil: 'domcontentloaded' });
+await q.waitForSelector('#feed .itemMain');
+await q.waitForFunction(() => /polling/.test(document.getElementById('liveText').textContent), { timeout: 8000 });
+const countThen = await q.$eval('#count', (n) => n.textContent);
+await q.waitForFunction((c) => document.getElementById('count').textContent !== c, { timeout: 25000 }, countThen);
+check('refused a live connection, the page polls and still gets new stories', await q.$eval('#offline', (n) => n.hidden));
+await q.evaluate(() => { location.hash = '#breaking'; });
+await q.waitForSelector('.room');
+await fetch(FULL + '/api/chat', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ room: 'general', name: 'other', text: 'from someone else ' + RUN }) });
+await said(q, 'from someone else ' + RUN);
+check('chat still arrives when its live connection is refused', true);
+await q.close(); await fullSvc.stop(); fullServer.close();
+await p.bringToFront();
+
 // ----- home + phones -----
 await p.goto(BASE + '/#home'); await p.waitForSelector('.clip');
 check('home collage', (await p.$$('.clip')).length === 14);

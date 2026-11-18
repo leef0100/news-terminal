@@ -32,13 +32,13 @@
   var HOUR = 3600000;
 
   var state = {
-    view: 'home', items: [], byId: {}, loaded: false, failed: false,
+    view: 'home', items: [], byId: Object.create(null), loaded: false, failed: false,
     kind: 'all', query: '', source: '', onlyBreaking: false, onlySaved: false, shown: PAGE,
     selected: null, pendingSelect: null, fresh: {}, queued: 0,
     keywords: load('nt.keywords', []), sound: load('nt.sound', false), soundAll: load('nt.soundAll', false),
     saved: load('nt.saved', []), compact: load('nt.compact', false),
     tokens: [], token: null, matchReq: 0, activeTerm: null,
-    room: 'general', msgs: {}, counts: {}, seenMsg: {}, name: load('nt.name', ''),
+    room: 'general', msgs: Object.create(null), counts: Object.create(null), seenMsg: Object.create(null), seenCount: 0, name: load('nt.name', ''),
     clipSlots: [], clipNext: 0
   };
   if (!state.name) { state.name = 'anon-' + Math.floor(1000 + Math.random() * 9000); save('nt.name', state.name); }
@@ -73,6 +73,16 @@
   }
   function iconBox(name) { var b = el('span', 'ico'); b.appendChild(icon(name)); return b; }
   function safeUrl(u) { return typeof u === 'string' && /^https:\/\//i.test(u) ? u : null; }
+  // Lists here are rebuilt when they change. Whoever is using the keyboard would lose
+  // their place each time, so the focused control is found again by its key afterwards.
+  function keepFocus(rebuild) {
+    var a = document.activeElement;
+    var key = a && a.dataset ? a.dataset.fk : null;
+    rebuild();
+    if (!key) return;
+    var again = document.querySelector('[data-fk="' + key.replace(/[^\w:.-]/g, '') + '"]');
+    if (again) again.focus({ preventScroll: true });
+  }
   function copyText(text, done) {
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done, function () {});
   }
@@ -190,7 +200,7 @@
   function route() {
     var raw = (location.hash || '#home').slice(1);
     // "#n-<id>" is a shared link to one story.
-    if (raw.indexOf('n-') === 0) { state.pendingSelect = raw.slice(2); raw = 'news'; }
+    if (raw.indexOf('n-') === 0) { state.pendingSelect = raw.slice(2).replace(/[^\w-]/g, '').slice(0, 64); raw = 'news'; }
     if (raw === 'terminal') raw = 'news';
     var v = VIEWS.indexOf(raw) === -1 ? 'home' : raw;
     state.view = v;
@@ -378,7 +388,8 @@
   }
 
   // ---------- news: filters ----------
-  function renderKinds() {
+  function renderKinds() { keepFocus(drawKinds); }
+  function drawKinds() {
     var box = $('kinds');
     box.textContent = '';
     KINDS.forEach(function (k) {
@@ -386,6 +397,7 @@
       var on = state.kind === k.id;
       var b = el('button', 'kind k-' + k.id + (on ? ' on' : ''));
       b.type = 'button';
+      b.dataset.fk = 'kind:' + k.id;
       b.setAttribute('aria-pressed', String(on));
       b.appendChild(iconBox(k.id));
       b.appendChild(el('span', null, k.label));
@@ -426,6 +438,7 @@
     row.dataset.id = it.id;
     var b = el('button', 'itemMain');
     b.type = 'button';
+    b.dataset.fk = 'row:' + it.id;
     b.setAttribute('aria-pressed', String(it.id === state.selected));
     b.appendChild(iconBox(it.topic));
     var body = el('span', 'body');
@@ -454,6 +467,7 @@
 
     var star = el('button', 'star' + (isSaved(it.id) ? ' on' : ''));
     star.type = 'button';
+    star.dataset.fk = 'star:' + it.id;
     star.setAttribute('aria-pressed', String(isSaved(it.id)));
     star.setAttribute('aria-label', isSaved(it.id) ? 'Remove from saved' : 'Save story');
     star.appendChild(icon('star', 18));
@@ -462,7 +476,8 @@
     return row;
   }
 
-  function renderFeed() {
+  function renderFeed() { keepFocus(drawFeed); }
+  function drawFeed() {
     var box = $('feed');
     var empty = $('empty');
     renderToggles();
@@ -511,7 +526,8 @@
     renderFeed();
   }
 
-  function renderTop() {
+  function renderTop() { keepFocus(drawTop); }
+  function drawTop() {
     var list = topStories();
     var box = $('topList');
     box.textContent = '';
@@ -520,6 +536,7 @@
       var li = el('li');
       var b = el('button', 'topItem k-' + it.topic);
       b.type = 'button';
+      b.dataset.fk = 'top:' + it.id;
       var body = el('span', 'body');
       var meta = el('span', 'meta');
       meta.appendChild(el('span', 'kindName', topicName(it)));
@@ -631,6 +648,11 @@
   // specific to this story, whether a token appeared after it, is worked out here.
   function fetchMatches(it, term) {
     var req = ++state.matchReq;
+    // "After the story" means after its first report by anyone, whichever outlet's copy
+    // happens to be open. Measuring from a later copy would pass off an early copycat as
+    // an established token.
+    var story = findStory(it.id);
+    var brokeAt = story && story.all.length ? story.all[0].ts : it.ts;
     state.activeTerm = term;
     state.tokens = [];
     state.token = null;
@@ -648,15 +670,17 @@
         (d.tokens || []).forEach(function (t) {
           if (seen[t.address]) return;
           seen[t.address] = true;
-          var after = t.createdAt != null && t.createdAt > it.ts;
+          var after = t.createdAt != null && t.createdAt > brokeAt;
           all.push(Object.assign({}, t, {
             createdAfterPost: after,
-            secondsAfterPost: after ? Math.round((t.createdAt - it.ts) / 1000) : null,
+            // 0 trading before the story, 1 age unknown, 2 started after it.
+            group: t.createdAt == null ? 1 : after ? 2 : 0,
+            secondsAfterPost: after ? Math.round((t.createdAt - brokeAt) / 1000) : null,
             ageSec: t.createdAt != null ? Math.max(0, Math.round((Date.now() - t.createdAt) / 1000)) : null
           }));
         });
       });
-      all.sort(function (a, b) { return Number(a.createdAfterPost) - Number(b.createdAfterPost) || b.liquidityUsd - a.liquidityUsd; });
+      all.sort(function (a, b) { return a.group - b.group || b.liquidityUsd - a.liquidityUsd; });
       state.tokens = all.slice(0, 8);
       state.token = state.tokens.length ? state.tokens[0].address : null;
       if (!state.tokens.length) showMatchState(err ? 'Token search is unavailable right now.' : 'No Solana tokens match ' + terms.join(', ') + '.');
@@ -691,8 +715,9 @@
       });
       b.appendChild(stats);
       var pills = el('span', 'pills');
-      if (t.createdAfterPost) pills.appendChild(el('span', 'pill warn', '⚠ Created ' + dur(t.secondsAfterPost) + ' after this story'));
-      else if (t.createdAt) pills.appendChild(el('span', 'pill', 'Existed before this story'));
+      if (t.createdAfterPost) pills.appendChild(el('span', 'pill warn', '⚠ Started trading ' + dur(t.secondsAfterPost) + ' after this story'));
+      else if (t.createdAt) pills.appendChild(el('span', 'pill', 'Trading before this story'));
+      else pills.appendChild(el('span', 'pill warn', 'Age unknown'));
       if (t.lowLiquidity) pills.appendChild(el('span', 'pill warn', 'Low liquidity'));
       b.appendChild(pills);
       b.addEventListener('click', function () { state.token = t.address; renderTokens(); });
@@ -728,11 +753,13 @@
     return t;
   }
 
-  function renderRooms() {
+  function renderRooms() { keepFocus(drawRooms); }
+  function drawRooms() {
     var box = $('rooms');
     box.textContent = '';
     var g = el('button', 'room general k-all' + (state.room === 'general' ? ' on' : ''));
     g.type = 'button';
+    g.dataset.fk = 'room:general';
     g.setAttribute('aria-pressed', String(state.room === 'general'));
     g.appendChild(iconBox('chat'));
     var gb = el('span', 'body');
@@ -750,6 +777,7 @@
     list.forEach(function (it) {
       var b = el('button', 'room k-' + it.topic + (state.room === it.id ? ' on' : ''));
       b.type = 'button';
+      b.dataset.fk = 'room:' + it.id;
       b.setAttribute('aria-pressed', String(state.room === it.id));
       b.appendChild(iconBox(it.topic));
       var body = el('span', 'body');
@@ -773,26 +801,60 @@
   }
 
   // Chat is streamed per room, and only while that room is open on screen.
-  var chatStream = null;
-  function closeChatStream() { if (chatStream) { chatStream.close(); chatStream = null; } }
+  var chatStream = null, chatPoll = null, chatRetry = null;
+  function closeChatStream() {
+    if (chatStream) { chatStream.close(); chatStream = null; }
+    clearInterval(chatPoll); chatPoll = null;
+    clearTimeout(chatRetry); chatRetry = null;
+  }
+  function startChatPoll(room) {
+    if (!chatPoll) chatPoll = setInterval(function () { if (!document.hidden) loadRoom(room); }, 3000);
+  }
   function openChatStream(room) {
     closeChatStream();
     chatStream = new EventSource('/api/chat/stream?room=' + encodeURIComponent(room));
     chatStream.addEventListener('chat', function (e) {
       try { onChat(JSON.parse(e.data)); } catch (err) { /* ignore malformed */ }
     });
-    // After a dropped connection, fetch whatever was said in the meantime.
-    var dropped = false;
-    chatStream.onerror = function () { dropped = true; };
-    chatStream.onopen = function () { if (dropped && state.room === room) { dropped = false; loadRoom(room); } };
+    chatStream.onopen = function () {
+      // Whatever was said while disconnected is fetched once the stream is back.
+      if (chatPoll) { clearInterval(chatPoll); chatPoll = null; loadRoom(room); }
+    };
+    chatStream.onerror = function () {
+      if (state.room !== room || state.view !== 'breaking') return;
+      // Keep the room moving by asking for it every few seconds meanwhile.
+      startChatPoll(room);
+      // A refused connection (the server is full) is never retried by the browser, so
+      // ask again later, at a slightly different moment from everyone else.
+      if (chatStream && chatStream.readyState === 2 && !chatRetry) {
+        chatRetry = setTimeout(function () {
+          chatRetry = null;
+          if (state.room !== room || state.view !== 'breaking') return;
+          openChatStream(room);
+          startChatPoll(room);
+        }, 30000 + Math.random() * 30000);
+      }
+    };
   }
+  // History from the server is merged with what the live stream has already delivered,
+  // never swapped in over it: the answer can be a few seconds old.
   function loadRoom(room) {
     fetch('/api/chat?room=' + encodeURIComponent(room)).then(function (r) { return r.json(); }).then(function (data) {
-      state.msgs[room] = data.messages || [];
-      state.msgs[room].forEach(function (m) { state.seenMsg[m.id] = true; });
-      state.counts = data.counts || state.counts;
+      var have = state.msgs[room] || [];
+      var ids = Object.create(null);
+      have.forEach(function (m) { ids[m.id] = true; });
+      (data.messages || []).forEach(function (m) { if (!ids[m.id]) { have.push(m); markSeen(m.id); } });
+      have.sort(function (a, b) { return a.ts - b.ts; });
+      state.msgs[room] = have.slice(-200);
+      state.counts = Object.assign(Object.create(null), data.counts || state.counts);
       if (state.room === room && state.view === 'breaking') { renderMsgs(); renderRooms(); }
     }).catch(function () {});
+  }
+  function markSeen(id) {
+    if (state.seenMsg[id]) return;
+    state.seenMsg[id] = true;
+    // Only recent ids matter for spotting repeats, so the record starts over now and then.
+    if (++state.seenCount > 3000) { state.seenMsg = Object.create(null); state.seenCount = 0; }
   }
 
   function openRoom(room) {
@@ -809,32 +871,42 @@
     openChatStream(room);
   }
 
+  function msgRow(m) {
+    var row = el('div', 'msg' + (m.name === state.name ? ' me' : ''));
+    var who = el('span', 'who');
+    who.appendChild(el('b', null, m.name));
+    who.appendChild(document.createTextNode(clock(m.ts)));
+    row.appendChild(who);
+    row.appendChild(el('span', 'say', m.text));
+    return row;
+  }
   function renderMsgs() {
     var box = $('msgs');
     box.textContent = '';
     var list = state.msgs[state.room] || [];
     if (!list.length) box.appendChild(el('p', 'muted', 'No messages yet. Start the conversation.'));
-    list.forEach(function (m) {
-      var row = el('div', 'msg' + (m.name === state.name ? ' me' : ''));
-      var who = el('span', 'who');
-      who.appendChild(el('b', null, m.name));
-      who.appendChild(document.createTextNode(clock(m.ts)));
-      row.appendChild(who);
-      row.appendChild(el('span', 'say', m.text));
-      box.appendChild(row);
-    });
+    list.forEach(function (m) { box.appendChild(msgRow(m)); });
     box.scrollTop = box.scrollHeight;
   }
 
   function onChat(m) {
-    if (!m || !m.room || state.seenMsg[m.id]) return;
-    state.seenMsg[m.id] = true;
+    if (!m || !m.room || !m.id || state.seenMsg[m.id]) return;
+    markSeen(m.id);
     state.counts[m.room] = (state.counts[m.room] || 0) + 1;
-    if (state.msgs[m.room]) state.msgs[m.room].push(m);
-    if (state.view === 'breaking') {
-      renderRooms();
-      if (m.room === state.room) renderMsgs();
+    var list = state.msgs[m.room];
+    if (list) { list.push(m); if (list.length > 200) list.splice(0, list.length - 200); }
+    if (state.view !== 'breaking') return;
+    if (m.room === state.room) {
+      // One new line is added; the room is not redrawn, so it is not read out again
+      // by a screen reader and the scroll position is kept unless already at the end.
+      var box = $('msgs');
+      var atEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+      if (list && list.length === 1) box.textContent = '';
+      box.appendChild(msgRow(m));
+      while (box.childNodes.length > 200) box.removeChild(box.firstChild);
+      if (atEnd || m.name === state.name) box.scrollTop = box.scrollHeight;
     }
+    renderRooms();
   }
 
   function sendChat(e) {
@@ -877,8 +949,11 @@
     });
   }
 
-  var audio = null;
+  var audio = null, lastBeep = 0;
   function beep(strong) {
+    // A batch of stories arriving together (after a reconnect, say) makes one sound, not many.
+    if (Date.now() - lastBeep < 1000) return;
+    lastBeep = Date.now();
     try {
       audio = audio || new (window.AudioContext || window.webkitAudioContext)();
       var o = audio.createOscillator(), g = audio.createGain();
@@ -1003,38 +1078,57 @@
   }
   function startPolling() {
     if (poll) return;
-    poll = setInterval(function () { loadFeed(true).then(function (ok) { setLive(ok ? 'poll' : 'down'); }); }, 3000);
+    setLive('poll');
+    poll = setInterval(function () { if (!document.hidden) loadFeed(true).then(function (ok) { setLive(ok ? 'poll' : 'down'); }); }, 3000);
   }
   function stopPolling() { clearInterval(poll); poll = null; }
 
-  var es = null;
+  var es = null, esRetry = null;
   function disconnectStream() {
     if (es) { es.close(); es = null; }
+    clearTimeout(esRetry); esRetry = null;
     stopPolling();
   }
   function connectStream() {
-    disconnectStream();
+    if (es) es.close();
+    clearTimeout(esRetry); esRetry = null;
     es = new EventSource('/api/stream');
     es.onopen = function () {
       // Anything published while disconnected is picked up by one catch-up fetch.
-      if (streamFails) loadFeed(true);
+      if (streamFails || poll) loadFeed(true);
       streamFails = 0;
       stopPolling();
       setLive('live');
     };
     es.onerror = function () {
       streamFails += 1;
+      // readyState 2 means the browser has given up (the server refused: it is at its
+      // connection limit). It will not try again by itself, so poll now and ask for a
+      // live connection again later, at a slightly different moment from everyone else.
+      if (es && es.readyState === 2) {
+        startPolling();
+        if (!esRetry) esRetry = setTimeout(connectStream, 30000 + Math.random() * 30000);
+        return;
+      }
       if (streamFails >= 2) startPolling(); else setLive('down');
     };
     es.addEventListener('item', function (e) {
       var it;
       try { it = JSON.parse(e.data); } catch (err) { return; }
       if (!addItem(it, true)) return;
+      // The first load may have failed; a story arriving live still gets the page going.
+      if (!state.loaded) { state.loaded = true; state.failed = false; render(); return; }
       renderNav();
       if (state.view === 'home' && !it.backfill) pasteClip(it);
       if (state.view === 'home') renderHome();
       if (state.view === 'breaking') renderRooms();
       onLiveItem(it);
+    });
+  }
+  // The first load is retried, a little slower each time, until it succeeds.
+  function firstLoad(wait) {
+    loadFeed(false).then(function (ok) {
+      if (!ok && !state.loaded) setTimeout(function () { firstLoad(Math.min(wait * 2, 15000)); }, wait);
     });
   }
 
@@ -1043,11 +1137,11 @@
     renderToggles();
     window.addEventListener('hashchange', route);
     route();
-    loadFeed(false);
+    firstLoad(1500);
     fetch('/api/chat?room=general').then(function (r) { return r.json(); }).then(function (data) {
       state.msgs.general = data.messages || [];
-      state.msgs.general.forEach(function (m) { state.seenMsg[m.id] = true; });
-      state.counts = data.counts || {};
+      state.msgs.general.forEach(function (m) { markSeen(m.id); });
+      state.counts = Object.assign(Object.create(null), data.counts || {});
       if (state.view === 'breaking') { renderRooms(); if (state.room === 'general') renderMsgs(); }
     }).catch(function () {});
 
@@ -1056,9 +1150,12 @@
     // site, and at scale idle tabs would otherwise occupy the servers. On return the
     // page catches up with one fetch and reconnects.
     document.addEventListener('visibilitychange', function () {
-      if (document.hidden) { disconnectStream(); closeChatStream(); return; }
+      // Someone with sound alerts on is relying on hearing them from another tab, so
+      // their connection is kept.
+      var listening = state.soundAll || (state.sound && state.keywords.length > 0);
+      if (document.hidden) { closeChatStream(); if (!listening) disconnectStream(); return; }
       loadFeed(true);
-      connectStream();
+      if (!es || es.readyState === 2) connectStream();
       if (state.view === 'breaking') { loadRoom(state.room); openChatStream(state.room); }
     });
     // Keeps "2m ago" labels and the hourly counts honest without rebuilding the list.
@@ -1067,7 +1164,7 @@
       document.querySelectorAll('.when[data-ts]').forEach(function (n) { n.textContent = ago(Number(n.dataset.ts)); });
       if (state.view === 'breaking') {
         // Message counts for the other rooms, which this page is not streaming.
-        fetch('/api/chat/counts').then(function (r) { return r.json(); }).then(function (d) { state.counts = d.counts || state.counts; renderRooms(); }).catch(function () { renderRooms(); });
+        if (!document.hidden) fetch('/api/chat/counts').then(function (r) { return r.json(); }).then(function (d) { state.counts = Object.assign(Object.create(null), d.counts || state.counts); renderRooms(); }).catch(function () { renderRooms(); });
       }
       if (state.view === 'news' && !state.selected) renderTop();
     }, 30000);

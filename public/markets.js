@@ -12,15 +12,16 @@
   var st = {
     coin: 'BTC', interval: '15m', markets: [], demo: false, active: false,
     timers: [], chart: null, candles: null, volume: null, fitted: '', last: null,
-    ws: null, wsOpen: false, wsRetry: 0, wsTimer: null, ping: null, subs: [], lastMsg: 0, trades: [], got: {}
+    ws: null, wsOpen: false, wsRetry: 0, wsTimer: null, wsStable: null, ping: null, subs: [], lastMsg: 0, trades: [], got: {}, pending: [], shown: '', historyRetry: null
   };
   try {
     st.coin = localStorage.getItem('nt.coin') || 'BTC';
     st.interval = localStorage.getItem('nt.interval') || '15m';
   } catch (e) { /* storage unavailable */ }
   if (INTERVALS.indexOf(st.interval) === -1) st.interval = '15m';
-  // The chart library draws UTC; shifting the timestamps makes the axis read in local time.
-  var SHIFT = new Date().getTimezoneOffset() * 60;
+  // The chart library draws UTC; shifting each timestamp by its own local offset makes the
+  // axis read in local time, including across a daylight-saving change.
+  function local(sec) { return sec - new Date(sec * 1000).getTimezoneOffset() * 60; }
 
   function el(tag, cls, text) {
     var n = document.createElement(tag);
@@ -64,12 +65,22 @@
 
   // ---------- rendering ----------
   function renderPicker() {
+    var active = document.activeElement;
+    var key = active && active.dataset ? active.dataset.fk : null;
+    drawPicker();
+    if (key && key.indexOf('coin:') === 0) {
+      var again = document.querySelector('[data-fk="' + key.replace(/[^\w:.-]/g, '') + '"]');
+      if (again) again.focus({ preventScroll: true });
+    }
+  }
+  function drawPicker() {
     var box = $('mCoins');
     box.textContent = '';
     st.markets.slice(0, 6).forEach(function (m) {
       var on = m.coin === st.coin;
       var b = el('button', 'kind k-crypto' + (on ? ' on' : ''));
       b.type = 'button';
+      b.dataset.fk = 'coin:' + m.coin;
       b.setAttribute('aria-pressed', String(on));
       b.appendChild(el('span', 'tick', m.coin));
       b.appendChild(el('span', 'n', signed(m.change24hPct, 1)));
@@ -120,6 +131,7 @@
         st.fitted = '';
         try { localStorage.setItem('nt.interval', iv); } catch (e) { /* ignore */ }
         renderIntervals();
+        clearChart();
         loadCandles();
         resubscribe();
       });
@@ -146,7 +158,7 @@
   function drawCandles(list, coin, interval) {
     ensureChart();
     if (!st.chart) { $('mState').textContent = 'The chart library did not load.'; return; }
-    var shifted = list.map(function (c) { return { time: c.time - SHIFT, open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume }; });
+    var shifted = list.map(function (c) { return { time: local(c.time), open: c.open, high: c.high, low: c.low, close: c.close, volume: c.volume }; });
     $('mState').textContent = shifted.length ? '' : 'No candles for this market yet.';
     if (shifted.length) {
       var d = decimals(shifted[shifted.length - 1].close);
@@ -155,6 +167,11 @@
     st.candles.setData(shifted);
     st.volume.setData(shifted.map(volBar));
     st.last = shifted.length ? shifted[shifted.length - 1].time : null;
+    st.shown = coin + interval;
+    // Live ticks that arrived while the history was loading are applied now.
+    var waiting = st.pending;
+    st.pending = [];
+    waiting.forEach(tickCandle);
     // Fit once per market and interval, then leave the user's zoom and scroll alone.
     if (st.fitted !== coin + interval) { st.chart.timeScale().fitContent(); st.fitted = coin + interval; }
   }
@@ -162,8 +179,13 @@
   // One live candle from the stream. Older-than-latest bars are ignored: the chart
   // library only accepts updates to the newest bar or a brand-new one.
   function tickCandle(c) {
-    if (!st.candles || st.last == null) return;
-    var bar = { time: Math.floor(c.t / 1000) - SHIFT, open: Number(c.o), high: Number(c.h), low: Number(c.l), close: Number(c.c), volume: Number(c.v) };
+    // Until this market's own history is on the chart, ticks are held back: drawn early
+    // they would land on the previous market's candles.
+    if (st.shown !== st.coin + st.interval || !st.candles || st.last == null) {
+      if (st.pending.length < 50) st.pending.push(c);
+      return;
+    }
+    var bar = { time: local(Math.floor(c.t / 1000)), open: Number(c.o), high: Number(c.h), low: Number(c.l), close: Number(c.c), volume: Number(c.v) };
     if (bar.time < st.last || !isFinite(bar.close)) return;
     st.candles.update(bar);
     st.volume.update(volBar(bar));
@@ -216,9 +238,22 @@
   // ---------- history and polling (our server) ----------
   function loadCandles() {
     var coin = st.coin, interval = st.interval;
+    clearTimeout(st.historyRetry);
     return get('/api/markets/candles?coin=' + encodeURIComponent(coin) + '&interval=' + interval).then(function (d) {
       if (coin === st.coin && interval === st.interval) drawCandles(d.candles, coin, interval);
-    }).catch(function () { $('mState').textContent = 'Candles are unavailable right now. Retrying.'; });
+    }).catch(function () {
+      $('mState').textContent = 'Candles are unavailable right now. Retrying.';
+      // History is retried by itself: the live stream cannot draw without it.
+      if (st.active && coin === st.coin && interval === st.interval) st.historyRetry = setTimeout(loadCandles, 4000);
+    });
+  }
+  // Empties the chart the moment the market or candle size changes, so the old market's
+  // candles are never shown under the new market's name.
+  function clearChart() {
+    st.shown = '';
+    st.last = null;
+    st.pending = [];
+    if (st.candles) { st.candles.setData([]); st.volume.setData([]); }
   }
   function loadBook() {
     var coin = st.coin;
@@ -236,7 +271,10 @@
   function loadMarkets() {
     return get('/api/markets').then(function (d) {
       st.demo = Boolean(d.demo);
-      st.markets = d.markets || [];
+      // The list is up to a few seconds old. The market on screen is being updated by the
+      // live stream, so its newer figures are kept and not replaced by older ones.
+      var live = streaming('ctx') ? current() : null;
+      st.markets = (d.markets || []).map(function (m) { return live && m.coin === live.coin ? live : m; });
       if (st.markets.length && !current()) st.coin = st.markets[0].coin;
       renderPicker();
       renderStats();
@@ -263,11 +301,16 @@
     ];
   }
   function send(obj) { if (st.ws && st.wsOpen) st.ws.send(JSON.stringify(obj)); }
+  // Only the subscriptions that actually changed are dropped and added: changing the
+  // candle size leaves the order book and trades streaming undisturbed.
   function resubscribe() {
     if (!st.wsOpen) return;
-    st.subs.forEach(function (s) { send({ method: 'unsubscribe', subscription: s }); });
-    st.subs = wanted();
-    st.subs.forEach(function (s) { send({ method: 'subscribe', subscription: s }); });
+    var want = wanted();
+    var key = function (s) { return JSON.stringify(s); };
+    var wantKeys = want.map(key), haveKeys = st.subs.map(key);
+    st.subs.forEach(function (s, i) { if (wantKeys.indexOf(haveKeys[i]) === -1) send({ method: 'unsubscribe', subscription: s }); });
+    want.forEach(function (s, i) { if (haveKeys.indexOf(wantKeys[i]) === -1) send({ method: 'subscribe', subscription: s }); });
+    st.subs = want;
   }
 
   function onStream(msg) {
@@ -284,11 +327,14 @@
     } else if (msg.channel === 'trades') {
       var fresh = (Array.isArray(d) ? d : []).filter(function (t) { return t.coin === st.coin; }).map(function (t) {
         var p = Number(t.px), s = Number(t.sz);
-        return { side: t.side === 'B' ? 'buy' : 'sell', px: p, sz: s, usd: p * s, time: t.time };
+        return { side: t.side === 'B' ? 'buy' : 'sell', px: p, sz: s, usd: p * s, time: t.time, id: t.tid != null ? t.tid : t.hash };
       });
       if (!fresh.length) return;
       // The first live batch replaces whatever the slower path had shown.
       if (st.got.trades !== st.coin) { st.trades = []; st.got.trades = st.coin; }
+      var have = Object.create(null);
+      st.trades.forEach(function (t) { if (t.id != null) have[t.id] = true; });
+      fresh = fresh.filter(function (t) { return t.id == null || !have[t.id]; });
       st.trades = fresh.concat(st.trades).sort(function (a, b) { return b.time - a.time; }).slice(0, 40);
       drawTrades();
     } else if (msg.channel === 'activeAssetCtx') {
@@ -302,12 +348,14 @@
       m.openInterestUsd = (Number(c.openInterest) || 0) * mark;
       m.volume24hUsd = Number(c.dayNtlVlm) || m.volume24hUsd;
       if (prev) m.change24hPct = ((mark - prev) / prev) * 100;
+      st.got.ctx = d.coin;
       renderStats();
     }
   }
 
   function closeStream() {
     clearTimeout(st.wsTimer);
+    clearTimeout(st.wsStable);
     clearInterval(st.ping);
     if (st.ws) { st.ws.onclose = null; st.ws.onerror = null; st.ws.onmessage = null; try { st.ws.close(); } catch (e) { /* ignore */ } }
     st.ws = null;
@@ -324,7 +372,11 @@
     st.ws = ws;
     ws.onopen = function () {
       st.wsOpen = true;
-      st.wsRetry = 0;
+      // The retry count is forgotten only once the connection has held for a while. A
+      // server that accepts and then drops would otherwise have every browser
+      // reconnecting every couple of seconds for ever.
+      clearTimeout(st.wsStable);
+      st.wsStable = setTimeout(function () { st.wsRetry = 0; }, 30000);
       st.lastMsg = Date.now();
       resubscribe();
       stopPolling();
@@ -332,7 +384,7 @@
       // The exchange drops quiet connections; a ping keeps this one open. If nothing at
       // all has arrived for a while the connection is dead, so start again.
       st.ping = setInterval(function () {
-        if (Date.now() - st.lastMsg > 45000) { openStream(); return; }
+        if (Date.now() - st.lastMsg > 45000) { try { ws.close(); } catch (e) { /* ignore */ } return; }
         send({ method: 'ping' });
       }, 20000);
     };
@@ -349,8 +401,12 @@
       // Keep the page moving on the slower path while reconnecting, backing off up to 30s.
       startPolling();
       setNote('poll');
-      st.wsRetry = Math.min(st.wsRetry + 1, 5);
-      st.wsTimer = setTimeout(function () { loadCandles(); openStream(); }, Math.min(30000, 1000 * Math.pow(2, st.wsRetry)));
+      clearTimeout(st.wsStable);
+      st.wsRetry = Math.min(st.wsRetry + 1, 6);
+      // Wait longer after each failure (up to a minute), and never at exactly the same
+      // moment as everyone else who lost the connection at the same time.
+      var wait = Math.min(60000, 1000 * Math.pow(2, st.wsRetry)) * (0.5 + Math.random());
+      st.wsTimer = setTimeout(function () { loadCandles(); openStream(); }, wait);
     };
     ws.onerror = function () { /* onclose follows and handles it */ };
   }
@@ -363,6 +419,7 @@
     try { localStorage.setItem('nt.coin', coin); } catch (e) { /* ignore */ }
     renderPicker();
     renderStats();
+    clearChart();
     loadCandles();
     loadBook();
     loadTrades();
@@ -372,6 +429,7 @@
   var marketsTimer = null;
   function stop() {
     st.active = false;
+    clearTimeout(st.historyRetry);
     stopPolling();
     clearInterval(marketsTimer);
     closeStream();
@@ -392,13 +450,16 @@
     marketsTimer = setInterval(loadMarkets, 15000);
   }
 
+  var onPage = false;
   $('mSelect').addEventListener('change', function (e) { setCoin(e.target.value); });
   document.addEventListener('nt:view', function (e) {
     stop();
-    if (e.detail === 'markets') start();
+    onPage = e.detail === 'markets';
+    if (onPage && !document.hidden) start();
   });
-  // A tab left in the background can miss ticks; refresh the history when it comes back.
+  // A tab in the background holds no stream and runs no timers; it starts afresh on return.
   document.addEventListener('visibilitychange', function () {
-    if (!document.hidden && st.active) loadCandles();
+    if (!onPage) return;
+    if (document.hidden) stop(); else start();
   });
 })();

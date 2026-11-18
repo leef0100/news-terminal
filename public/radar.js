@@ -120,7 +120,8 @@
         var td = el('td', 'mono', f ? signed(f.annualPct, 1) : '—');
         if (f) {
           // Strength scales with the rate and tops out at 40% a year.
-          var a = Math.min(1, Math.abs(f.annualPct) / 40) * 0.6 + 0.08;
+          // Capped so the light text keeps at least 4.5:1 contrast on the strongest cells.
+          var a = Math.min(1, Math.abs(f.annualPct) / 40) * 0.24 + 0.06;
           td.style.background = f.annualPct >= 0 ? 'rgba(107, 232, 154, ' + a.toFixed(2) + ')' : 'rgba(242, 135, 107, ' + a.toFixed(2) + ')';
           td.title = (f.rate8h * 100).toFixed(4) + '% per 8 hours';
         }
@@ -161,11 +162,15 @@
     });
   }
 
-  document.addEventListener('nt:view', function (e) {
+  var onPage = false;
+  function run() {
     clearInterval(timer);
     timer = null;
-    if (e.detail !== 'radar') return;
+    // Nothing is fetched while the page is not on screen or the tab is in the background.
+    if (!onPage || document.hidden) return;
     load();
     timer = setInterval(load, 15000);
-  });
+  }
+  document.addEventListener('nt:view', function (e) { onPage = e.detail === 'radar'; run(); });
+  document.addEventListener('visibilitychange', run);
 })();

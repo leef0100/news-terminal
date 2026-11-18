@@ -18,7 +18,7 @@ Open http://localhost:3000. Everything in demo mode is made up, prices included;
 `npm start` to see the real market.
 
 ```
-npm test             # unit and server tests (25), including a two-server Redis cluster
+npm test             # unit and server tests, including a two-server Redis cluster
 npm run test:e2e     # full browser test of every page (needs Chrome; set CHROME_PATH)
 ```
 
@@ -26,8 +26,8 @@ npm run test:e2e     # full browser test of every page (needs Chrome; set CHROME
 
 | Page | What it does |
 |---|---|
-| **News** | The centrepiece. Live feed sorted into categories. The same story from several outlets is one row. Top stories panel, search, source filter, breaking-only and saved views, compact mode, keyboard control, shareable links. New stories wait behind a button while you read further down. |
-| **Story detail** | Other outlets reporting it, and matching Solana tokens: the one that existed before the story first, anything created after it flagged with how long after, thin pools marked. Copy the address, open the chart, or open the token on pump.fun. |
+| **News** | The centrepiece. Live feed sorted into categories. The same story from several outlets is grouped into one row (by matching names, numbers and direction, so it errs towards keeping stories apart). Top stories panel, search, source filter, breaking-only and saved views, compact mode, keyboard control, shareable links. New stories wait behind a button while you read further down. |
+| **Story detail** | Other outlets reporting it, and matching Solana tokens: the one already trading before the story's first report comes first, anything that started trading after it is flagged with how long after, unknown ages are marked, thin pools too. Copy the address, open the chart, or open the token on pump.fun. |
 | **Breaking** | The most immediate items of the last hour, each with a live chat room, plus a general room. |
 | **Radar** | Long/short split per coin across venues, a funding heatmap, open interest, the Coinbase premium, and large Hyperliquid trades. |
 | **Markets** | Candle chart, order book, trades and stats for any Hyperliquid perpetual, streamed tick by tick from the exchange. |
