@@ -1,4 +1,4 @@
-# floor.trade
+# floor.xyz
 
 A real-time news feed for memecoin traders. Each item shows the tickers it mentions, and
 selecting one lists the matching Solana tokens with the real one first and copycats
