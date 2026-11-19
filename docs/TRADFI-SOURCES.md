@@ -122,8 +122,10 @@ if its name is on an allow-list of unmistakable tickers, so a contract named GOL
 shown as a company. Index contracts appear under our own symbols (`HL:XYZ100`) and are named
 "XYZ100 perpetual on Hyperliquid", never after the index they imitate. Movers are computed
 over that handful of shares and say so in `movers.universe`.
-Unverified: that `candleSnapshot` accepts a venue-prefixed coin such as `xyz:NVDA` (not in the
-documentation read), and which index contracts exist beyond `XYZ100`. Budget: 260 weight a
+Verified in the review (official info-endpoint page): `candleSnapshot` takes the venue-prefixed
+coin ("For HIP-3, you need to prefix with the dex name, e.g. `xyz:XYZ100`"), `1d` is a supported
+interval, and only the most recent 5,000 candles are available. The venue's own specification
+lists the index contracts `SP500`, `XYZ100`, `JP225`, `KR200`. Still unseen: one live answer. Budget: 260 weight a
 minute, because `src/hyperliquid.js` may spend up to 900 of the same 1,200 from this server.
 
 **Finnhub** (`https://finnhub.io/api/v1`, `token` query parameter): `/quote?symbol=` returning
@@ -132,12 +134,13 @@ minute, because `src/hyperliquid.js` may spend up to 900 of the same 1,200 from 
 returning `ipoCalendar[].{name,symbol,date,exchange,price,status}`. Shapes taken from an
 open-source client library, not the official pages. Quotes are marked `delayed: true` because
 freshness on the free plan could not be confirmed. Budget 50 a minute; one call per symbol,
-kept 20 seconds. Whether these endpoints are still free: **not checked**.
+kept 30 seconds. Whether these endpoints are still free: **not checked**.
 
 **Twelve Data** (`https://api.twelvedata.com`, header `Authorization: apikey KEY`):
 `/time_series?symbol=&interval=1day&outputsize=` returning `values[].{datetime,open,high,low,close,volume}`
-(read in documentation); `/quote?symbol=` (fields `close`, `previous_close`, `percent_change`,
-`timestamp` are **from memory**; only `is_market_open` was confirmed). Errors arrive as
+(read in documentation); `/quote?symbol=` (fields `close`, `previous_close`, `percent_change`, `timestamp`,
+`last_quote_at`, `is_market_open` **read in documentation** in the review; `timestamp` is the
+opening time of the current daily bar, so the price's time is taken from `last_quote_at`). Errors arrive as
 `{code,message,status:"error"}`. Budget 7 a minute and 750 a day.
 
 A licensed feed plugs in as one more object with `quote(symbol, led)` and
@@ -160,3 +163,55 @@ real exchange index levels. Each is reported in `sources` with state `off`.
 - `/private` rows: `detail` (false when the filing's amounts could not be read).
 - `movers.universe` (live) explains what the movers are drawn from; `movers` is null when no price source is on.
 - Demo: every `url` is null (there is no real document to link to).
+
+## Review of 2026-11-19: what was checked against documentation, and what changed
+
+Checked with a web-fetch tool against the pages named; "confirmed" means the page says so in
+words, not that a live answer was seen. Nothing below was seen live from this server.
+
+| Item | Outcome |
+|---|---|
+| SEC submissions, company facts, frames (sec.gov "EDGAR Application Programming Interfaces") | URL patterns confirmed. Submissions hold "at least one year of filings or 1,000, whichever is more", with older ones in `files`. Units with a numerator and denominator are written `USD-per-shares` in frames addresses; the `USD/shares` key inside company facts and the `filings.recent` parallel arrays are still **from memory**. No CORS, 10 requests a second, and the User-Agent form are confirmed. |
+| SEC ticker files | Both files confirmed to exist with the stated contents; the SEC "does not guarantee accuracy or scope". Field layout of the exchange file still **from memory**. |
+| EDGAR `getcurrent` Atom feed | **Could not be checked**: the tool returned an unrelated HTML page for the address. Entry format remains from memory. The parser now fails (502, or the saved answer) on anything that is not an Atom feed, where before an HTML block page read as "no filings". |
+| Form D `primary_doc.xml` | File name confirmed on a real filing index (sec.gov, accession 0001620733-19-000001 lists `primary_doc.xml`). Element names confirmed against sec-api.io's reference, which shows `investmentFundInfo` both under `industryGroup` and beside it: both are now read. "Indefinite" as the literal value of `totalOfferingAmount` is **from memory**. |
+| Treasury yield feed | Address, `data=`, the three date parameters and paging confirmed (home.treasury.gov). `NEW_DATE` and the `BC_` prefix confirmed from the CRAN `treasury` package source; `BC_1_5MONTH`, `BC_4MONTH`, `m:type` and `m:null` from the Treasury's developer notice. The `feed/entry/content/m:properties` envelope appears only as an image on the Treasury page: **not confirmed**. |
+| FRED | `series/observations` (parameters, `pc1`, string `value`) and `release/dates` (`release_id`, `include_release_dates_with_no_data`, `release_dates[].date`) confirmed. The `fred/release` page could not be opened. The "." missing value is not mentioned on the observations page: still **from memory** (it is skipped if it appears, and any other non-number is skipped too). |
+| Twelve Data | `time_series`: `outputsize` 1 to 5000 confirmed (used for `range=max`), `values[]` fields confirmed, one credit a symbol. `quote`: field list confirmed. `Authorization: apikey KEY` confirmed as the recommended method; errors are `{code,message,status}`. **Code changed**: `asOf` used `timestamp` (the bar's opening time, hours early) and now uses `last_quote_at`. |
+| Finnhub | Official pages returned no text again. A third-party catalogue confirms only that the key is the `token` query parameter. Response fields remain from an open-source client. |
+| Hyperliquid | See section 5: prefix, interval and the 5,000-candle limit confirmed; index names confirmed from docs.trade.xyz. |
+
+Other changes from the review that bear on sources:
+
+- **Per-address fairness.** Each request runs for one address (`req.ip`). The router allows 300
+  weighted requests a minute per address (company and candles count 3). On top, each source
+  charges real upstream calls to the address that caused them: SEC 60 a minute, Finnhub 30,
+  Twelve Data 4, Hyperliquid weight 160. Fixed files and feeds (the ticker list, filing feeds,
+  the Hyperliquid market list, FRED, calendars) are charged to nobody. Refusals are HTTP 429,
+  never cached. This narrows, but cannot remove, the reach of one address over an allowance as
+  small as Twelve Data's 7 a minute: two addresses can still use all of it.
+- **Calendar.** Finnhub is asked by whole calendar month and the answer cut to the days wanted.
+- **Form D.** Details are read in the background; `/private` answers within about 1.5 seconds
+  with `detailsPending` and rows marked `detail: false` (amounts unknown, shown as "Not read").
+- **A service saying stop.** HTTP 429 (and 403 from the SEC) pauses every call to that source
+  for `Retry-After`, or 30 seconds (SEC 60), serving saved answers meanwhile.
+- **Bodies** are read up to a cap (4 MB; 64 MB for company facts, 16 MB for the ticker file);
+  XML with a document type or entity declarations is refused before parsing.
+- **Keys** are stripped from every error message (`token=`, `api_key=`) before it can reach a
+  log, the Status page or a client.
+- **`range=max`**: Twelve Data `outputsize=5000`; Hyperliquid a 5,000-day window; the demo from
+  5 January 2015. Every `/candles` answer carries `range`, `historyStart` and `capped` (true when
+  the answer is as long as the source allows, so earlier history may exist).
+- **Statements.** `Revenues` (the total) is preferred over the contract-revenue tags; a quarter
+  under a second-choice tag is used only if that tag's annual figure agrees with the first
+  choice's; quarter ends are also found from stand-alone quarters; a filer reporting in another
+  currency gets `statements: null` with a reason naming the currency.
+- **Demo names.** Six names were real firms or one letter from one (Vantrix, Ardent Leisure,
+  Tindra, Quillon, and the near-misses Zephra, Oktavo) and six pipeline words likewise; all
+  were replaced and the replacements searched for. A search finding nothing is not proof that
+  no firm anywhere uses a name.
+
+Still unverified until the first live run: every response shape marked from memory above; that
+the SEC accepts the configured User-Agent; the real size of company-facts files against the
+64 MB cap; Finnhub's free-plan coverage of quotes and calendars; that Hyperliquid's weight for
+a 5,000-day candle request is what is budgeted (104).

@@ -200,3 +200,28 @@ th .tfTick { margin-left: 8px; }
 /* spacing inside a block, and text columns that read from the left */
 .tfBody { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .tfRaises th:nth-child(2), .tfRaises td:nth-child(2), .tfRaises th:nth-child(3), .tfRaises td:nth-child(3) { text-align: left; }
+
+/* ----- review additions ----- */
+/* Perpetual-contract prices: the notice that goes with them wherever they appear. */
+.tfPerpNote { margin: 0 0 12px; padding: 8px 12px; border-left: 3px solid var(--warn); background: color-mix(in srgb, var(--warn) 9%, var(--panel)); color: var(--text); border-radius: 4px; line-height: 1.45; }
+.tfPerp { margin-left: 8px; font-size: 11px; vertical-align: middle; }
+.tfFred { margin: 12px 0 0; }
+/* Statement columns: the period's name with the day it ends beneath. */
+.tfStmt thead th .tfPer { display: block; }
+.tfStmt thead th .tfPerEnd { display: block; font-size: 11px; font-weight: 400; white-space: nowrap; font-family: inherit; }
+/* Tap targets of at least 40px. */
+.tfBlock .thBtn { min-width: 40px; }
+.tfEvLink { display: inline-flex; align-items: center; min-height: 40px; padding: 2px 0; }
+/* Hidden helper text inside a scrolling table must be anchored to its cell, or it widens the page. */
+.tfBlock .tableWrap th, .tfBlock .tableWrap td { position: relative; }
+.tfStmt th:first-child { position: sticky; }
+/* The watchlist's add box sits in a column: its 320px basis is a width elsewhere, not a height here. */
+#tfWat .tfSearch { flex: 0 0 auto; max-width: none; }
+/* Phones: the movers tables keep their last column (volume) on screen. */
+@media (max-width: 480px) {
+  .tfMover .tfCoName { max-width: 13ch; }
+  .tfMover .screener th, .tfMover .screener td { padding-left: 4px; padding-right: 4px; }
+  .tfMover .thBtn { padding-left: 2px; padding-right: 2px; }
+}
+/* A caption is as wide as its table; on a narrow screen it stays within view while the table scrolls. */
+@media (max-width: 760px) { .tfBlock .tableWrap caption.tfCap { display: block; position: sticky; left: 0; width: calc(100vw - 96px); max-width: 100%; white-space: normal; text-align: left; } }

@@ -256,7 +256,10 @@ test('parsers: SEC ticker files, the latest-filings feed, Form D, the Treasury f
   assert.equal(feed.length, 3);
   assert.deepEqual(feed[1], { form: 'S-1/A', company: 'Example Test Co', cik: 1, role: 'Filer', accession: '0000000001-26-000002', filedAt: '2026-11-17', updated: '2026-11-17T16:05:11-05:00', url: 'https://www.sec.gov/Archives/edgar/data/1/000000000126000002/0000000001-26-000002-index.htm' });
   assert.deepEqual(parseCurrentFeed('<feed></feed>'), []);
-  assert.deepEqual(parseCurrentFeed('not xml at all'), []);
+  // An error page or a block notice is a failure, never "no filings today".
+  assert.throws(() => parseCurrentFeed('not xml at all'), /Not an SEC filings feed/);
+  assert.throws(() => parseCurrentFeed('<!DOCTYPE html><html><body>Your Request Originates from an Undeclared Automated Tool</body></html>'), /Not a plain XML feed/);
+  assert.throws(() => parseCurrentFeed('<html><body>Request Rate Threshold Exceeded</body></html>'), /Not an SEC filings feed/);
 
   assert.deepEqual(parseFormD(FORM_D['000090001026000010']), { form: 'D', issuer: 'Example Robotics Fund LP', state: 'DE', industry: 'Pooled Investment Fund', amountOffered: null, amountSold: 12500000, firstSale: '2026-11-05' });
   assert.equal(parseFormD(formD('D', 'X', 'NY', 'Other Technology', '5000', '0', '<yetToOccur>true</yetToOccur>')).firstSale, null);
@@ -698,4 +701,496 @@ test('Fed calendar: published dates only, and nothing invented past the end of t
   assert.equal(all.filter((e) => /decision/.test(e.title)).length, 8);
   assert.deepEqual(all.filter((e) => /minutes/.test(e.title)).map((e) => e.date), ['2026-02-18', '2026-04-08', '2026-05-20', '2026-07-08', '2026-08-19', '2026-10-07', '2026-11-18', '2026-12-30']);
   assert.deepEqual(fomcEvents(Date.UTC(2029, 0, 1), Date.UTC(2029, 2, 1)), []);
+});
+
+// ---------------------------------------------------------------------------------------
+// Review: harder statement cases. Each payload is hand-made and each expectation was worked
+// out by hand from it.
+const xf = (start, end, val, filed, form, fy, fp, extra = {}) => ({ ...(start ? { start } : {}), end, val, accn: `0000000002-${filed.slice(2, 4)}-${filed.slice(5, 7)}${filed.slice(8)}`, fy, fp, form, filed, ...extra });
+const rowsOf = (S) => (key) => findRow(S, key)?.values ?? null;
+
+test('statements: a 52/53-week year ending in late September keeps its own quarters, labels and day-exact balance sheet', () => {
+  // FY2023 runs 2022-09-25 to 2023-09-30 (53 weeks, 371 days); FY2024 2023-10-01 to 2024-09-28 (364 days).
+  const K23 = ['2023-11-03', '10-K', 2023, 'FY'], K24 = ['2024-11-01', '10-K', 2024, 'FY'];
+  const q1 = ['2024-02-02', '10-Q', 2024, 'Q1'], q2 = ['2024-05-03', '10-Q', 2024, 'Q2'], q3 = ['2024-08-02', '10-Q', 2024, 'Q3'], q1n = ['2025-01-31', '10-Q', 2025, 'Q1'];
+  const facts = { facts: { 'us-gaap': {
+    Revenues: { units: { USD: [
+      xf('2022-09-25', '2023-09-30', 3830, ...K23), xf('2022-09-25', '2023-09-30', 3830, ...K24, { frame: 'CY2023' }),
+      xf('2023-10-01', '2023-12-30', 1196, ...q1),
+      // The same fy/fp carries a quarter, a half-year and (below) nine months.
+      xf('2023-12-31', '2024-03-30', 908, ...q2), xf('2023-10-01', '2024-03-30', 2104, ...q2),
+      xf('2024-03-31', '2024-06-29', 858, ...q3), xf('2023-10-01', '2024-06-29', 2962, ...q3),
+      xf('2023-10-01', '2024-09-28', 3910, ...K24),
+      // The same fact twice, once with a frame and once without: one value, not two.
+      xf('2024-09-29', '2024-12-28', 1243, ...q1n), xf('2024-09-29', '2024-12-28', 1243, ...q1n, { frame: 'CY2024Q4' }), xf('2023-10-01', '2023-12-30', 1196, ...q1n)
+    ] } },
+    EarningsPerShareDiluted: { units: { 'USD/shares': [
+      xf('2022-09-25', '2023-09-30', 6.13, ...K23), xf('2023-10-01', '2024-09-28', 6.08, ...K24), xf('2023-10-01', '2023-12-30', 2.18, ...q1),
+      xf('2023-12-31', '2024-03-30', 1.53, ...q2), xf('2023-10-01', '2024-03-30', 3.71, ...q2), xf('2024-03-31', '2024-06-29', 1.40, ...q3), xf('2023-10-01', '2024-06-29', 5.11, ...q3)
+    ] } },
+    // Share counts are given for the first quarter alone, then only for the year so far.
+    WeightedAverageNumberOfDilutedSharesOutstanding: { units: { shares: [
+      xf('2022-09-25', '2023-09-30', 158e6, ...K23), xf('2023-10-01', '2024-09-28', 154e6, ...K24), xf('2023-10-01', '2023-12-30', 155e6, ...q1), xf('2023-10-01', '2024-03-30', 154.9e6, ...q2), xf('2023-10-01', '2024-06-29', 154.5e6, ...q3)
+    ] } },
+    Assets: { units: { USD: [
+      xf(null, '2023-09-30', 3525, ...K23), xf(null, '2023-12-30', 3535, ...q1), xf(null, '2024-03-30', 3374, ...q2), xf(null, '2024-06-29', 3318, ...q3), xf(null, '2024-09-28', 3649, ...K24), xf(null, '2024-12-28', 3440, ...q1n),
+      // A reading dated on the day the report was filed, and one at the calendar quarter end, belong to no period.
+      xf(null, '2024-11-01', 9999, ...K24), xf(null, '2024-09-30', 8888, ...K24)
+    ] } },
+    NetCashProvidedByUsedInOperatingActivities: { units: { USD: [
+      xf('2022-09-25', '2023-09-30', 1105, ...K23), xf('2023-10-01', '2023-12-30', 399, ...q1), xf('2023-10-01', '2024-03-30', 626, ...q2), xf('2023-10-01', '2024-06-29', 915, ...q3), xf('2023-10-01', '2024-09-28', 1182, ...K24)
+    ] } },
+    PaymentsToAcquirePropertyPlantAndEquipment: { units: { USD: [xf('2022-09-25', '2023-09-30', 110, ...K23), xf('2023-10-01', '2023-12-30', 24, ...q1), xf('2023-10-01', '2024-03-30', 44, ...q2), xf('2023-10-01', '2024-09-28', 94, ...K24)] } }
+  } } };
+  const s = buildStatements(facts);
+  const a = rowsOf(s.annual), q = rowsOf(s.quarterly);
+  assert.deepEqual(s.annual.periods, ['FY2024', 'FY2023']);
+  assert.deepEqual(s.annual.periodEnds, ['2024-09-28', '2023-09-30']);
+  assert.deepEqual(a('revenue'), [3910, 3830]);
+  assert.deepEqual(a('totalAssets'), [3649, 3525]);
+  assert.deepEqual(a('epsDiluted'), [6.08, 6.13]);
+  assert.deepEqual(a('sharesDiluted'), [154e6, 158e6]);
+  assert.deepEqual(a('capex'), [-94, -110]);
+  assert.deepEqual(a('freeCashFlow'), [1088, 995]);
+  // The quarter that ends in December is the FIRST quarter of the next financial year.
+  assert.deepEqual(s.quarterly.periods, ['Q1 FY2025', 'Q4 FY2024', 'Q3 FY2024', 'Q2 FY2024', 'Q1 FY2024', 'Q4 FY2023']);
+  assert.deepEqual(s.quarterly.periodEnds, ['2024-12-28', '2024-09-28', '2024-06-29', '2024-03-30', '2023-12-30', '2023-09-30']);
+  // Q4 = 3910 - 2962 (the year less nine months), marked; the others as reported.
+  assert.deepEqual(q('revenue'), [1243, 948, 858, 908, 1196, null]);
+  assert.deepEqual(findRow(s.quarterly, 'revenue').derived, [false, true, false, false, false, false]);
+  // Per-share figures: never 6.08 - 5.11 for the fourth quarter, never a year-to-date figure in a quarter's cell.
+  assert.deepEqual(q('epsDiluted'), [null, null, 1.40, 1.53, 2.18, null]);
+  assert.deepEqual(q('sharesDiluted'), [null, null, null, null, 155e6, null]);
+  assert.deepEqual(q('totalAssets'), [3440, 3649, 3318, 3374, 3535, 3525]);
+  assert.deepEqual(q('operatingCashFlow'), [null, 267, 289, 227, 399, null]);
+  // Capital spending has no nine-month figure: Q3 and Q4 stay empty (94 - 44 would be two quarters).
+  assert.deepEqual(q('capex'), [null, null, null, -20, -24, null]);
+  assert.deepEqual(q('freeCashFlow'), [null, null, null, 207, 375, null]);
+});
+
+test('statements: a year ending in January takes the name the company gives it', () => {
+  const facts = { facts: { 'us-gaap': { Revenues: { units: { USD: [
+    xf('2023-01-29', '2024-02-03', 100, '2024-03-20', '10-K', 2023, 'FY'), xf('2024-02-04', '2025-02-01', 110, '2025-03-20', '10-K', 2024, 'FY'), xf('2023-01-29', '2024-02-03', 100, '2025-03-20', '10-K', 2024, 'FY'),
+    xf('2025-02-02', '2025-05-03', 27, '2025-06-01', '10-Q', 2025, 'Q1'), xf('2024-02-04', '2024-05-04', 25, '2025-06-01', '10-Q', 2025, 'Q1')
+  ] } } } } };
+  const s = buildStatements(facts);
+  assert.deepEqual(s.annual.periods, ['FY2024', 'FY2023']);   // not FY2025, though it ends in 2025
+  assert.deepEqual(s.annual.periodEnds, ['2025-02-01', '2024-02-03']);
+  assert.deepEqual(s.quarterly.periods.slice(0, 1), ['Q1 FY2025']);
+  assert.deepEqual(s.quarterly.periodEnds.slice(0, 1), ['2025-05-03']);
+});
+
+test('statements: total revenue is not replaced by its customer-contract part, in the year or in a quarter', () => {
+  const K = ['2025-03-01', '10-K', 2024, 'FY'];
+  const facts = { facts: { 'us-gaap': {
+    Revenues: { units: { USD: [xf('2024-01-01', '2024-12-31', 1000, ...K), xf('2023-01-01', '2023-12-31', 900, '2024-03-01', '10-K', 2023, 'FY')] } },
+    // The narrower tag is the only one in the quarterly reports.
+    RevenueFromContractWithCustomerExcludingAssessedTax: { units: { USD: [
+      xf('2024-01-01', '2024-12-31', 800, ...K), xf('2024-01-01', '2024-03-31', 190, '2024-05-01', '10-Q', 2024, 'Q1'), xf('2024-01-01', '2024-06-30', 390, '2024-08-01', '10-Q', 2024, 'Q2'),
+      xf('2025-01-01', '2025-03-31', 210, '2025-05-01', '10-Q', 2025, 'Q1')
+    ] } },
+    Assets: { units: { USD: [xf(null, '2024-12-31', 5, ...K), xf(null, '2024-03-31', 5, ...K), xf(null, '2024-06-30', 5, ...K), xf(null, '2025-03-31', 5, ...K)] } }
+  } } };
+  const s = buildStatements(facts);
+  assert.deepEqual(rowsOf(s.annual)('revenue'), [1000, 900]);   // was 800
+  // 190, 200 and 210 are contract revenue only: shown under "Revenue" they would understate it.
+  assert.deepEqual(s.quarterly.periods, ['Q1 FY2025', 'Q4 FY2024', 'Q2 FY2024', 'Q1 FY2024', 'Q4 FY2023']);
+  assert.deepEqual(rowsOf(s.quarterly)('revenue'), [null, null, null, null, null]);
+});
+
+test('statements: a change of tag between years leaves no hole and no double count; one inside a year is not bridged', () => {
+  const facts = { facts: { 'us-gaap': {
+    SalesRevenueNet: { units: { USD: [
+      xf('2022-01-01', '2022-12-31', 700, '2023-02-20', '10-K', 2022, 'FY'), xf('2023-01-01', '2023-12-31', 800, '2024-02-20', '10-K', 2023, 'FY'),
+      xf('2024-01-01', '2024-03-31', 210, '2024-05-01', '10-Q', 2024, 'Q1'), xf('2024-01-01', '2024-06-30', 430, '2024-08-01', '10-Q', 2024, 'Q2'), xf('2024-01-01', '2024-09-30', 660, '2024-11-01', '10-Q', 2024, 'Q3')
+    ] } },
+    // From the 2024 annual report on, a new tag; it repeats 2023 for comparison.
+    RevenueFromContractWithCustomerExcludingAssessedTax: { units: { USD: [xf('2024-01-01', '2024-12-31', 900, '2025-02-20', '10-K', 2024, 'FY'), xf('2023-01-01', '2023-12-31', 800, '2025-02-20', '10-K', 2024, 'FY')] } },
+    Assets: { units: { USD: [xf(null, '2024-12-31', 1, '2025-02-20', '10-K', 2024, 'FY')] } }
+  } } };
+  const s = buildStatements(facts);
+  assert.deepEqual(s.annual.periods, ['FY2024', 'FY2023', 'FY2022']);
+  assert.deepEqual(rowsOf(s.annual)('revenue'), [900, 800, 700]);
+  assert.deepEqual(s.quarterly.periods.slice(0, 4), ['Q4 FY2024', 'Q3 FY2024', 'Q2 FY2024', 'Q1 FY2024']);
+  // Q4 would need the year under one tag less nine months under another: left empty, not 240.
+  assert.deepEqual(rowsOf(s.quarterly)('revenue').slice(0, 4), [null, 230, 220, 210]);
+});
+
+test('statements: a fourth quarter is never worked out when a quarter before it is missing', () => {
+  const K = ['2025-02-14', '10-K', 2024, 'FY'];
+  const facts = { facts: { 'us-gaap': {
+    // Each quarter reported only on its own; the third is missing altogether.
+    Revenues: { units: { USD: [xf('2024-01-01', '2024-12-31', 400, ...K), xf('2024-01-01', '2024-03-31', 90, '2024-05-01', '10-Q', 2024, 'Q1'), xf('2024-04-01', '2024-06-30', 100, '2024-08-01', '10-Q', 2024, 'Q2'), xf('2023-01-01', '2023-12-31', 360, '2024-02-14', '10-K', 2023, 'FY')] } },
+    Assets: { units: { USD: [xf(null, '2024-12-31', 50, ...K)] } }
+  } } };
+  const s = buildStatements(facts);
+  // The second quarter is found although no six-month figure marks its end.
+  assert.deepEqual(s.quarterly.periods, ['Q4 FY2024', 'Q2 FY2024', 'Q1 FY2024', 'Q4 FY2023']);
+  assert.deepEqual(rowsOf(s.quarterly)('revenue'), [null, 100, 90, null]);   // never 400 - 190 = 210
+  assert.equal(findRow(s.quarterly, 'revenue').derived, undefined);
+});
+
+test('statements: a change of year-end shows each year under its own end date, without overlap', () => {
+  const facts = { facts: { 'us-gaap': { Revenues: { units: { USD: [
+    xf('2021-10-01', '2022-09-30', 300, '2022-11-20', '10-K', 2022, 'FY'), xf('2022-10-01', '2023-09-30', 330, '2023-11-20', '10-K', 2023, 'FY'),
+    xf('2023-10-01', '2023-12-31', 90, '2024-02-20', '10-KT', 2023, 'FY'),                 // the three-month bridge
+    xf('2024-01-01', '2024-12-31', 380, '2025-02-20', '10-K', 2024, 'FY'), xf('2023-01-01', '2023-12-31', 345, '2025-02-20', '10-K', 2024, 'FY'),   // 2023 recast to the new year-end
+    xf('2024-01-01', '2024-03-31', 91, '2024-05-01', '10-Q', 2024, 'Q1')
+  ] } } } } };
+  const s = buildStatements(facts);
+  // The recast calendar 2023 is kept and the overlapping year to September 2023 dropped: no month is counted twice.
+  assert.deepEqual(s.annual.periods, ['FY2024', 'FY2023', 'FY2022']);
+  assert.deepEqual(s.annual.periodEnds, ['2024-12-31', '2023-12-31', '2022-09-30']);
+  assert.deepEqual(rowsOf(s.annual)('revenue'), [380, 345, 300]);
+  // The bridge period is the last quarter of calendar 2023, as reported; it is not a year.
+  const i = s.quarterly.periodEnds.indexOf('2023-12-31');
+  assert.equal(s.quarterly.periods[i], 'Q4 FY2023');
+  assert.equal(rowsOf(s.quarterly)('revenue')[i], 90);
+});
+
+test('statements: figures in another currency are not shown as dollars', () => {
+  const s = buildStatements({ facts: { 'us-gaap': {
+    Revenues: { units: { CAD: [xf('2024-01-01', '2024-12-31', 100, '2025-03-01', '40-F', 2024, 'FY')] } },
+    Assets: { units: { CAD: [xf(null, '2024-12-31', 500, '2025-03-01', '40-F', 2024, 'FY')] } }
+  } } });
+  assert.equal(s.annual, null);
+  assert.equal(s.quarterly, null);
+  assert.match(s.reason, /reports in CAD, not US dollars/);
+  // A dollar filer with one stray figure in another currency is unaffected.
+  const mixed = buildStatements({ facts: { 'us-gaap': { Revenues: { units: { USD: [xf('2024-01-01', '2024-12-31', 70, '2025-03-01', '10-K', 2024, 'FY')], EUR: [xf('2024-01-01', '2024-12-31', 999, '2025-03-01', '10-K', 2024, 'FY')] } } } } });
+  assert.deepEqual(rowsOf(mixed.annual)('revenue'), [70]);
+});
+
+test('statements: a restatement filed later wins for the year, and quarters derived from it use the restated figures', () => {
+  const facts = { facts: { 'us-gaap': { NetIncomeLoss: { units: { USD: [
+    xf('2023-01-01', '2023-12-31', 100, '2024-02-15', '10-K', 2023, 'FY'),
+    xf('2023-01-01', '2023-12-31', 80, '2024-09-01', '10-K/A', 2023, 'FY'),       // restated down
+    xf('2023-01-01', '2023-12-31', 80, '2025-02-15', '10-K', 2024, 'FY'),
+    xf('2023-01-01', '2023-09-30', 70, '2023-11-01', '10-Q', 2023, 'Q3'), xf('2023-01-01', '2023-09-30', 62, '2024-11-01', '10-Q', 2024, 'Q3'),   // nine months restated too
+    xf('2023-01-01', '2023-06-30', 45, '2023-08-01', '10-Q', 2023, 'Q2'), xf('2023-01-01', '2023-03-31', 20, '2023-05-01', '10-Q', 2023, 'Q1'),
+    xf('2024-01-01', '2024-12-31', 130, '2025-02-15', '10-K', 2024, 'FY')
+  ] } } } } };
+  const s = buildStatements(facts);
+  assert.deepEqual(rowsOf(s.annual)('netIncome'), [130, 80]);
+  const at = (end) => rowsOf(s.quarterly)('netIncome')[s.quarterly.periodEnds.indexOf(end)];
+  assert.equal(at('2023-12-31'), 18);   // 80 - 62, both as restated; not 100 - 70 and not 80 - 70
+  assert.equal(at('2023-09-30'), 17);   // 62 - 45
+  assert.equal(at('2023-06-30'), 25);
+  assert.equal(at('2023-03-31'), 20);
+});
+
+// ---------------------------------------------------------------------------------------
+// Review: abuse, failure and fairness.
+import { visitor, redact } from '../src/tradfi/source.js';
+import { createLimiter, addressKey } from '../src/tradfi/index.js';
+import { plainXml } from '../src/tradfi/util.js';
+
+test('source: keys are stripped from errors, oversized and non-JSON answers fail, and a 429 is respected', async () => {
+  assert.equal(redact('fetch failed https://finnhub.io/api/v1/quote?symbol=A&token=fh-secret'), 'fetch failed https://finnhub.io/api/v1/quote?symbol=A&token=[hidden]');
+  assert.equal(redact('x?api_key=abc123&file_type=json'), 'x?api_key=[hidden]&file_type=json');
+
+  let t = 1e12, mode = 'leak', n = 0;
+  const stream = (text) => new Response(text, { status: 200 });
+  const fetchImpl = async (url) => {
+    n += 1;
+    if (mode === 'leak') throw new TypeError(`request to ${url} failed`);
+    if (mode === 'html') return stream('<!DOCTYPE html><html><body>Service unavailable</body></html>');
+    if (mode === 'big') return stream('"' + 'x'.repeat(3000) + '"');
+    if (mode === '429') return new Response('slow down', { status: 429, headers: { 'retry-after': '90' } });
+    return stream('{"ok":true}');
+  };
+  const s = createSource({ name: 'Keyed', fetchImpl, now: () => t, maxBytes: 2000 });
+  await assert.rejects(s.get('https://example.test/q?token=fh-secret'), (e) => !/fh-secret/.test(e.message) && /token=\[hidden\]/.test(e.message));
+  assert.ok(!/fh-secret/.test(JSON.stringify(s.health())));
+  // HTML where JSON was expected is a failure, not an empty answer.
+  mode = 'html'; t += 3000;
+  await assert.rejects(s.get('u-html'), /JSON|Unexpected/);
+  // A body larger than the cap is not read to the end.
+  mode = 'big'; t += 3000;
+  await assert.rejects(s.get('u-big'), /sent more than/);
+  mode = 'ok'; t += 3000;
+  assert.deepEqual((await s.get('u-ok', { ttlMs: 1000 })).data, { ok: true });
+  // 429 with Retry-After: nothing at all is asked of the service for those 90 seconds.
+  mode = '429'; t += 3000;
+  await assert.rejects(s.get('u-a'), /HTTP 429/);
+  const before = n;
+  mode = 'ok'; t += 60000;
+  await assert.rejects(s.get('u-b'), /refusing requests for now \(HTTP 429\)/);
+  assert.equal((await s.get('u-ok', { ttlMs: 1000, staleMs: 600000 })).stale, true);   // a saved answer still stands in
+  assert.equal(n, before);
+  assert.ok(s.health().pausedUntil > t);
+  t += 31000;
+  assert.deepEqual((await s.get('u-b')).data, { ok: true });
+});
+
+test('source: one visitor cannot spend the whole allowance, shared calls are charged to nobody, tables stay bounded', async () => {
+  let t = 1e12, n = 0;
+  const fetchImpl = async () => { n += 1; return { ok: true, status: 200, json: async () => ({ n }) }; };
+  const s = createSource({ name: 'Fair', fetchImpl, now: () => t, budget: [{ max: 10, perMs: 60000 }], perVisitor: { max: 3, perMs: 60000 }, maxEntries: 50 });
+  const as = (id, fn) => visitor.run({ id }, fn);
+  await as('a', () => s.get('a1')); await as('a', () => s.get('a2')); await as('a', () => s.get('a3'));
+  await assert.rejects(as('a', () => s.get('a4')), /Too many new lookups from one address/);
+  assert.equal(n, 3);
+  // Somebody else is not refused because of it, including for the very same thing.
+  assert.equal((await as('b', () => s.get('a4'))).data.n, 4);
+  // What is already held costs nothing, so the first visitor can still read it.
+  assert.equal((await as('a', () => s.get('a4'))).data.n, 4);
+  // A call that serves everyone is not charged to whoever triggered it.
+  assert.equal((await as('a', () => s.get('fixed-file', { shared: true }))).data.n, 5);
+  // The global budget still holds for everyone together.
+  for (const id of ['c', 'd']) for (let i = 0; i < 3; i++) await as(id, () => s.get(`${id}${i}`).catch(() => null));
+  assert.equal(n, 10);
+  // Many addresses and many keys: the tables do not grow without end.
+  t += 60000;
+  const wide = createSource({ name: 'Wide', fetchImpl, now: () => t, perVisitor: { max: 1, perMs: 60000 }, maxEntries: 50 });
+  for (let i = 0; i < 6000; i++) await as('v' + i, () => wide.get('k' + i));
+  assert.ok(wide.size().cache <= 50 && wide.size().visitors <= 5000 && wide.size().inflight === 0, JSON.stringify(wide.size()));
+});
+
+test('router: a per-address limit answers 429 before any work, and addresses are grouped sensibly', async () => {
+  assert.equal(addressKey('::ffff:203.0.113.9'), '203.0.113.9');
+  assert.equal(addressKey('2001:db8:1:2:aaaa:bbbb:cccc:dddd'), addressKey('2001:db8:1:2::1'));
+  assert.notEqual(addressKey('2001:db8:1:2::1'), addressKey('2001:db8:1:3::1'));
+  assert.equal(addressKey(undefined), 'unknown');
+  let t = 0;
+  const lim = createLimiter({ max: 5, perMs: 60000, now: () => t, maxAddresses: 100 });
+  assert.deepEqual([lim.take('a', 3), lim.take('a', 2), lim.take('a', 1), lim.take('b', 5)], [0, 0, 60, 0]);
+  t = 61000;
+  assert.equal(lim.take('a', 1), 0);
+  for (let i = 0; i < 1000; i++) lim.take('x' + i);
+  assert.ok(lim.size() <= 100);
+
+  const fetchImpl = upstream();
+  const svc = await serve({ env: { SEC_USER_AGENT: UA }, fetchImpl, now: () => NOW, tuning: { requestsPerMinute: 7 } });
+  try {
+    assert.equal((await svc.get('/company?symbol=EXT')).status, 200);    // weight 3
+    assert.equal((await svc.get('/candles?symbol=NVDA')).status, 200);   // weight 3
+    const calls = fetchImpl.calls.length;
+    const r = await svc.get('/company?symbol=EXB');                      // would make 7 + 2
+    assert.equal(r.status, 429);
+    assert.equal(r.headers.get('cache-control'), 'no-store');
+    assert.ok(Number(r.headers.get('retry-after')) >= 1);
+    assert.match(r.body.error, /Too many requests/);
+    assert.equal(fetchImpl.calls.length, calls);
+    assert.equal((await svc.get('/search?q=ex')).status, 200);           // a light request still fits
+  } finally { await svc.close(); }
+});
+
+test('live: one address cannot use up the SEC allowance; others are still served', async () => {
+  const many = { fields: TICKERS.fields, data: TICKERS.data.concat(Array.from({ length: 30 }, (_, i) => [5000 + i, `Filler Company ${i}`, `FIL${i}`, 'NYSE'])) };
+  const base = upstream();
+  const fetchImpl = async (url, init) => (String(url).includes('company_tickers_exchange.json') ? { ok: true, status: 200, json: async () => many } : base(url, init));
+  const tradfi = createTradfi({ log: quiet, env: { SEC_USER_AGENT: UA, HL_EQUITY_DEX: 'off' }, fetchImpl, now: () => NOW, tuning: { secPerSecond: 1000, secWaitMs: 0, secPerVisitor: 6 } });
+  const app = express();
+  app.set('trust proxy', true);
+  app.use('/api/tradfi', tradfi.router);
+  const server = await new Promise((resolve) => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
+  const get = async (path, ip) => { const r = await fetch(`http://127.0.0.1:${server.address().port}/api/tradfi${path}`, { headers: { 'x-forwarded-for': ip } }); return { status: r.status, body: await r.json() }; };
+  try {
+    // Each new company is two SEC calls; the list of companies is shared and charged to nobody.
+    for (let i = 0; i < 3; i++) assert.equal((await get(`/company?symbol=FIL${i}`, '198.51.100.7')).status, 200);
+    const refused = await get('/company?symbol=FIL3', '198.51.100.7');
+    assert.equal(refused.status, 429);
+    assert.match(refused.body.error, /Too many new lookups from one address/);
+    // Another address asks for the same company and gets it; then the first can read it from memory.
+    assert.equal((await get('/company?symbol=FIL3', '203.0.113.50')).status, 200);
+    assert.equal((await get('/company?symbol=FIL3', '198.51.100.7')).status, 200);
+    assert.equal((await get('/company?symbol=FIL0', '198.51.100.7')).status, 200);
+  } finally { await new Promise((r) => server.close(r)); }
+});
+
+test('live: two tickers of one company share the work and each answer names the ticker asked for', async () => {
+  const two = { fields: TICKERS.fields, data: [[1, 'Example Test Co', 'EXT', 'NYSE'], [1, 'Example Test Co', 'EXT-B', 'NYSE']] };
+  const base = upstream();
+  const fetchImpl = async (url, init) => (String(url).includes('company_tickers_exchange.json') ? { ok: true, status: 200, json: async () => two } : base(url, init));
+  const svc = await serve({ env: { SEC_USER_AGENT: UA, HL_EQUITY_DEX: 'off' }, fetchImpl, now: () => NOW });
+  try {
+    assert.equal((await svc.get('/company?symbol=EXT')).body.symbol, 'EXT');
+    const n = base.calls.length;
+    assert.equal((await svc.get('/company?symbol=EXT-B')).body.symbol, 'EXT-B');   // was "EXT"
+    assert.equal((await svc.get('/company?symbol=EXT.B')).body.symbol, 'EXT-B');   // typed with a dot
+    assert.equal(base.calls.length, n);
+  } finally { await svc.close(); }
+});
+
+test('live: Form D details load in the background; a slow SEC does not hold the page', async () => {
+  const base = upstream();
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const fetchImpl = async (url, init) => { if (String(url).includes('primary_doc.xml')) await gate; return base(url, init); };
+  const svc = await serve({ env: { SEC_USER_AGENT: UA, HL_EQUITY_DEX: 'off' }, fetchImpl, now: () => NOW, tuning: { formDWaitMs: 30 } });
+  try {
+    const started = Date.now();
+    const first = await svc.get('/private');
+    assert.ok(Date.now() - started < 1500);
+    assert.equal(first.status, 200);
+    assert.equal(first.body.raises.length, 3);
+    assert.equal(first.body.detailsPending, 3);
+    // Nothing is known about amounts yet, and nothing is made up: null with `detail: false`.
+    assert.ok(first.body.raises.every((r) => r.detail === false && r.amountOffered === null && r.amountSold === null && r.industry === null));
+    assert.match(first.body.sources[0].note, /still being read/);
+    // Other requests are not held up, and asking again does not start the same work twice.
+    assert.equal((await svc.get('/ipos')).status, 200);
+    await svc.get('/private');
+    assert.equal(base.calls.filter((u) => u.includes('primary_doc.xml')).length, 0);
+    release();
+    await new Promise((r) => setTimeout(r, 60));
+    const done = (await svc.get('/private')).body;
+    assert.equal(done.detailsPending, 0);
+    assert.deepEqual(done.raises.map((r) => [r.detail, r.amountOffered, r.amountSold]), [[true, null, 12500000], [true, 30000000, 21000000], [false, null, null]]);
+    assert.match(done.sources[0].note, /could not be read for 1 of the newest filings/);
+    assert.equal(base.calls.filter((u) => u.includes('primary_doc.xml')).length, 3);
+  } finally { await svc.close(); }
+});
+
+test('live: the SEC blocking us (403), HTML in place of a feed, and a foreign filer all say what happened', async () => {
+  const base = upstream();
+  let mode = 'ok';
+  const fetchImpl = async (url, init) => {
+    const u = String(url);
+    if (mode === '403' && u.includes('sec.gov')) return { ok: false, status: 403, text: async () => '<html>Undeclared Automated Tool</html>', json: async () => { throw new SyntaxError('Unexpected token <'); } };
+    if (mode === 'html' && u.includes('browse-edgar')) return { ok: true, status: 200, text: async () => '<html><body>Request Rate Threshold Exceeded</body></html>' };
+    if (u.includes('/companyfacts/CIK0000000002.json')) return { ok: true, status: 200, json: async () => ({ facts: { 'ifrs-full': { Revenue: { units: { EUR: [] } } } } }) };
+    return base(url, init);
+  };
+  let t = NOW;
+  const svc = await serve({ env: { SEC_USER_AGENT: UA, HL_EQUITY_DEX: 'off' }, fetchImpl, now: () => t });
+  try {
+    // A foreign filer under IFRS: a company page with no statements and the reason.
+    const foreign = (await svc.get('/company?symbol=EXB')).body;
+    assert.equal(foreign.statements, null);
+    assert.match(foreign.statementsNote, /international standards \(IFRS\)/);
+    assert.deepEqual(foreign.facts, []);
+    // A filer with no structured data at all (404 from the SEC).
+    const none = (await svc.get('/company?symbol=NEM2')).body;
+    assert.equal(none.statements, null);
+    assert.match(none.statementsNote, /no financial data in the SEC’s structured format/);
+    // An HTML page where the feed should be is an error, not an empty pipeline.
+    mode = 'html';
+    const ipos = await svc.get('/ipos');
+    assert.equal(ipos.status, 502);
+    const priv = await svc.get('/private');
+    assert.equal(priv.status, 502);
+    // Blocked: one refusal pauses every SEC call for a minute, and the Status page says why.
+    mode = '403'; t += 5000;
+    assert.equal((await svc.get('/company?symbol=NVDA')).status, 502);
+    const calls = base.calls.length;
+    t += 30000;
+    const again = await svc.get('/company?symbol=NVDA');
+    assert.equal(again.status, 502);
+    assert.match(again.body.error, /refusing requests for now \(HTTP 403\)/);
+    assert.equal(base.calls.length, calls);
+    const h = svc.tradfi.health().sources[0];
+    assert.equal(h.state, 'error');
+    assert.match(h.lastError, /HTTP 403/);
+    // Companies already read are still served from memory meanwhile.
+    assert.equal((await svc.get('/company?symbol=EXB')).status, 200);
+  } finally { await svc.close(); }
+});
+
+test('live: the calendar asks Finnhub by whole month, so no choice of days can multiply the calls', async () => {
+  const fetchImpl = upstream();
+  const svc = await serve({ env: { FINNHUB_KEY: 'fh-secret', HL_EQUITY_DEX: 'off' }, fetchImpl, now: () => NOW });
+  try {
+    const fh = () => fetchImpl.calls.filter((u) => u.includes('finnhub.io/api/v1/calendar'));
+    await svc.get('/calendar?from=2026-11-19&to=2026-11-25');
+    assert.deepEqual(fh().map((u) => /calendar\/(\w+)\?from=([\d-]+)&to=([\d-]+)/.exec(u).slice(1)).sort(), [['earnings', '2026-11-01', '2026-11-30'], ['ipo', '2026-11-01', '2026-11-30']]);
+    for (let d = 1; d <= 28; d++) await svc.get(`/calendar?from=2026-11-${String(d).padStart(2, '0')}&to=2026-11-${String(Math.min(30, d + 2)).padStart(2, '0')}`);
+    assert.equal(fh().length, 2);
+    // Events outside the days asked for are not shown, though the month was fetched whole.
+    const narrow = (await svc.get('/calendar?from=2026-11-25&to=2026-11-26')).body.events.filter((e) => e.kind === 'earnings' || e.kind === 'ipo');
+    assert.deepEqual(narrow.map((e) => e.date), ['2026-11-25']);
+    // An unexpected "hour" from upstream cannot pull text out of thin air.
+    assert.ok(narrow.every((e) => !/function|native code/.test(String(e.detail))));
+  } finally { await svc.close(); }
+});
+
+test('candles: range=max returns the longest history each source holds and says how far back it goes', async () => {
+  const demo = await serve({ demo: true, now: () => NOW });
+  try {
+    const d = (await demo.get('/candles?symbol=QUILLN&range=max')).body;
+    assert.equal(d.range, 'max');
+    assert.equal(d.historyStart, '2015-01-05');
+    assert.equal(d.capped, false);
+    assert.equal(new Date(d.candles[0].time * 1000).toISOString().slice(0, 10), '2015-01-05');
+    assert.ok(d.candles.length > 3000 && d.candles.length <= 5000);
+    const five = (await demo.get('/candles?symbol=QUILLN&range=5y')).body;
+    assert.deepEqual(d.candles.slice(-five.candles.length), five.candles);
+    assert.equal((await demo.get('/candles?symbol=QUILLN&range=10y')).status, 400);
+  } finally { await demo.close(); }
+
+  const base = upstream();
+  const bars = (n) => Array.from({ length: n }, (_, i) => ({ datetime: new Date(Date.UTC(2026, 10, 18) - i * 86400000).toISOString().slice(0, 10), open: '10', high: '11', low: '9', close: '10.5', volume: '100' }));
+  const asked = [];
+  const fetchImpl = async (url, init) => {
+    if (!String(url).includes('api.twelvedata.com/time_series')) return base(url, init);
+    asked.push(String(url));
+    return { ok: true, status: 200, json: async () => ({ values: bars(5000), status: 'ok' }) };
+  };
+  const live = await serve({ env: { SEC_USER_AGENT: UA, TWELVEDATA_KEY: 'td-secret' }, fetchImpl, now: () => NOW });
+  try {
+    const td = (await live.get('/candles?symbol=EXT&range=max')).body;
+    assert.match(asked[0], /outputsize=5000\b/);   // the most the source gives in one answer
+    assert.equal(td.candles.length, 5000);
+    assert.equal(td.capped, true);     // the source may hold more than one answer carries
+    assert.equal(td.historyStart, td.candles.length ? new Date(td.candles[0].time * 1000).toISOString().slice(0, 10) : null);
+    // A perpetual: asked for as far back as the venue serves, with the venue's own coin name.
+    const hl = (await live.get('/candles?symbol=HL:XYZ100&range=max')).body;
+    const sent = JSON.parse(base.calls.find((u) => u.includes('candleSnapshot') && u.includes('xyz:XYZ100')).split(' ').slice(1).join(' '));
+    assert.equal(sent.req.coin, 'xyz:XYZ100');
+    assert.equal(sent.req.interval, '1d');
+    assert.equal(sent.req.endTime - sent.req.startTime, 5000 * 86400000);
+    assert.deepEqual([hl.kind, hl.range, hl.capped, hl.candles.length], ['perp', 'max', false, 20]);
+    assert.match(hl.source, /Hyperliquid perpetual \(xyz:XYZ100\)/);
+  } finally { await live.close(); }
+});
+
+test('Twelve Data: the quote is timed by its last trade minute, never by when the daily bar opened', async () => {
+  const base = upstream();
+  const quote = { symbol: 'EXT', close: '102.5', previous_close: '100', percent_change: '2.5', open: '100.5', high: '103', low: '100', volume: '1200', timestamp: Math.floor(NOW / 1000) - 6 * 3600, last_quote_at: Math.floor(NOW / 1000) - 60, is_market_open: true };
+  let body = quote;
+  const fetchImpl = async (url, init) => (String(url).includes('api.twelvedata.com/quote') ? { ok: true, status: 200, json: async () => body } : base(url, init));
+  let t = NOW;
+  const svc = await serve({ env: { TWELVEDATA_KEY: 'td-secret', HL_EQUITY_DEX: 'off' }, fetchImpl, now: () => t });
+  try {
+    const q = (await svc.get('/quote?symbols=EXT')).body.quotes[0];
+    assert.deepEqual([q.price, q.changePct, q.asOf, q.delayed, q.source], [102.5, 2.5, NOW - 60000, false, 'Twelve Data']);   // asOf was six hours early
+    // With only the bar's opening time to go on, the age is unknown and the price is not called live.
+    body = { ...quote, last_quote_at: undefined }; t += 10 * 60000;
+    const q2 = (await svc.get('/quote?symbols=EXT')).body.quotes[0];
+    assert.deepEqual([q2.asOf, q2.delayed], [null, true]);
+  } finally { await svc.close(); }
+});
+
+test('XML from outside: document types and entity declarations are refused before parsing', () => {
+  assert.throws(() => plainXml('<?xml version="1.0"?><!DOCTYPE lolz [<!ENTITY lol "lol"><!ENTITY lol2 "&lol;&lol;&lol;&lol;">]><feed>&lol2;</feed>'), /Not a plain XML feed/);
+  assert.throws(() => parseYieldFeed('<!DOCTYPE feed [<!ENTITY a "aaaa">]><feed></feed>'));
+  assert.throws(() => parseFormD('<!DOCTYPE x [<!ENTITY a "aaaa">]><edgarSubmission></edgarSubmission>'));
+  assert.throws(() => plainXml('x'.repeat(5e6)), /too large/);
+  assert.throws(() => parseYieldFeed('<html><body>Access denied</body></html>'), /Not a Treasury yield feed/);
+  assert.deepEqual(parseYieldFeed('<feed></feed>'), []);
+  // Deep nesting ends quickly with an error instead of running on.
+  const started = Date.now();
+  assert.throws(() => parseCurrentFeed('<feed>' + '<entry><title>'.repeat(20000) + '</feed>'));
+  assert.ok(Date.now() - started < 2000);
+});
+
+test('demo: each session opens near the last close, and no invented name is a known real firm', async () => {
+  const demo = createDemoBackend({ now: () => NOW });
+  for (const symbol of ['QUILLN', 'NORGAL', 'DEMO500']) {
+    const c = (await demo.candles(symbol, '1y')).candles;
+    const gaps = c.slice(1).map((x, i) => Math.abs(x.open / c[i].close - 1));
+    const bodies = c.map((x) => (x.high - x.low) / x.open);
+    const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+    // Before: the average gap between a close and the next open was as large as the day's own range.
+    assert.ok(Math.max(...gaps) < 0.02, `${symbol} largest gap ${Math.max(...gaps)}`);
+    assert.ok(mean(gaps) < mean(bodies) / 4, `${symbol} gaps ${mean(gaps)} against ranges ${mean(bodies)}`);
+  }
+  // Names found to belong to real companies in a web search on 2026-11-19, or one letter from one.
+  const REAL = ['vantrix', 'ardent', 'tindra', 'quillon', 'zephra', 'oktavo', 'okta', 'fawkner', 'xanthera', 'quenby', 'pendrake', 'rookhurst', 'daventree'];
+  const names = [];
+  for (const s of demo.symbols()) names.push((await demo.company(s)).name, s);
+  for (const p of (await demo.ipos()).pipeline) names.push(p.company, p.symbol || '');
+  for (const r of (await demo.private()).raises) names.push(r.issuer);
+  for (const n of names) for (const real of REAL) assert.ok(!new RegExp(`\\b${real}\\b`, 'i').test(n), `${n} uses the real name ${real}`);
 });

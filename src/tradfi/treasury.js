@@ -4,7 +4,7 @@
 // end-of-day data and is labelled with its date.
 
 import { XMLParser } from 'fast-xml-parser';
-import { num } from './util.js';
+import { num, plainXml } from './util.js';
 
 const FEED = 'https://home.treasury.gov/resource-center/data-chart-center/interest-rates/pages/xml';
 // Feed field -> the label shown. The six-week bill (1.5 months) was added in 2025.
@@ -14,15 +14,17 @@ const parser = new XMLParser({ ignoreAttributes: true, removeNSPrefix: true, par
 
 // The feed's XML -> days, oldest first: [{ date: 'YYYY-MM-DD', points: [{ tenor, value }] }]
 export function parseYieldFeed(xml) {
-  const doc = parser.parse(String(xml || ''));
-  const entries = [].concat(doc?.feed?.entry || []);
+  const doc = parser.parse(plainXml(xml));
+  // An error page is a failure; a real feed with no entries (the first days of a month) is not.
+  if (!doc || (typeof doc.feed !== 'object' && doc.feed !== '')) throw new Error('Not a Treasury yield feed');
+  const entries = [].concat(doc.feed?.entry || []);
   const days = [];
   for (const e of entries) {
     const p = e?.content?.properties;
     const date = String(p?.NEW_DATE || '').slice(0, 10);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
     const points = [];
-    for (const [field, tenor] of TENORS) { const value = num(p[field]); if (value !== null) points.push({ tenor, value }); }
+    for (const [field, tenor] of TENORS) { const value = num(typeof p[field] === 'object' ? null : p[field]); if (value !== null) points.push({ tenor, value }); }
     if (points.length) days.push({ date, points });
   }
   return days.sort((a, b) => (a.date < b.date ? -1 : 1));
@@ -39,7 +41,9 @@ export function createTreasury({ source, now = Date.now }) {
     if (days.length < 2) {
       d.setUTCDate(0);
       const before = await led.tryRead(source, monthUrl(d), opts);
-      days = [...(before || []), ...days];
+      // Oldest first, one entry a day (the two months can never overlap, but nothing relies on that).
+      const have = new Set(days.map((x) => x.date));
+      days = [...(before || []).filter((x) => !have.has(x.date)), ...days];
     }
     if (!days.length) return null;
     const last = days[days.length - 1];

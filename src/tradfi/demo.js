@@ -3,11 +3,14 @@
 // Everything here is invented: the companies, their tickers, the indexes, the prices, the
 // accounts, the filings and the fundraisings. Tickers are six letters long on purpose:
 // no US-listed share has a ticker that long, so none of these can be mistaken for one.
+// The names were checked against a web search on 2026-11-19 and six that turned out to
+// belong to real firms (or sat one letter from one) were replaced; see TRADFI-SOURCES.md.
 // The numbers are worked out from fixed seeds, so every request and every server agrees,
 // and the accounts are simulated quarter by quarter so they add up the way real ones do
 // (assets equal liabilities plus equity; four quarters sum to the year).
 
 import { DAY, bad, hash, noise, pick, round, pct, isoDay, isWeekday, weekday, RANGES } from './util.js';
+import { reach } from './prices.js';
 import { shapeStatement } from './layout.js';
 
 const SECTORS = {
@@ -25,16 +28,16 @@ const SECTORS = {
 
 // symbol, name, sector, industry, month the financial year ends (always the end of a calendar quarter)
 const LIST = [
-  ['QUILLN', 'Quillon Microsystems Inc.', 'Technology', 'Semiconductors', 12],
-  ['VANTRX', 'Vantrix Cloudworks Corp.', 'Technology', 'Prepackaged software', 12],
+  ['QUILLN', 'Quilvexa Microsystems Inc.', 'Technology', 'Semiconductors', 12],
+  ['VELQRX', 'Velquorix Cloudworks Corp.', 'Technology', 'Prepackaged software', 12],
   ['HEXALN', 'Hexaline Devices Inc.', 'Technology', 'Electronic computers', 9],
   ['BRYMOR', 'Brymoor Software Group', 'Technology', 'Prepackaged software', 6],
-  ['ZEPHRA', 'Zephra Networks Inc.', 'Technology', 'Computer communications equipment', 12],
-  ['OKTAVO', 'Oktavo Data Systems Corp.', 'Technology', 'Data processing services', 12],
+  ['ZEFRND', 'Zefrindo Networks Inc.', 'Technology', 'Computer communications equipment', 12],
+  ['OKTRVN', 'Oktravane Data Systems Corp.', 'Technology', 'Data processing services', 12],
   ['ORLAVN', 'Orlavine Therapeutics Inc.', 'Health Care', 'Pharmaceutical preparations', 12],
   ['CASTBX', 'Castelbrix Biosciences Inc.', 'Health Care', 'Biological products', 12],
   ['MERWDL', 'Merrowdell Health Group', 'Health Care', 'Hospitals and medical services', 12],
-  ['TINDRA', 'Tindra Medical Devices Corp.', 'Health Care', 'Surgical and medical instruments', 9],
+  ['TYNDRX', 'Tyndrexa Medical Devices Corp.', 'Health Care', 'Surgical and medical instruments', 9],
   ['NORGAL', 'Norgale Bancorp', 'Financials', 'National commercial banks', 12],
   ['PELLRK', 'Pellam Rooke Financial Corp.', 'Financials', 'Security brokers and dealers', 12],
   ['HALVMH', 'Halvermoor Mutual Holdings', 'Financials', 'Life insurance', 12],
@@ -44,7 +47,7 @@ const LIST = [
   ['SORVEL', 'Sorvella Home Brands', 'Consumer', 'Household furniture', 12],
   ['KESTRO', 'Kestroby Motors Corp.', 'Consumer', 'Motor vehicles', 12],
   ['WOLLMT', 'Wollamot Markets Inc.', 'Consumer', 'Grocery stores', 12],
-  ['ARDENT', 'Ardentiq Leisure Group', 'Consumer', 'Hotels and motels', 12],
+  ['UMBRIQ', 'Umbriqua Leisure Group', 'Consumer', 'Hotels and motels', 12],
   ['GRIMSH', 'Grimshawe Industrial Corp.', 'Industrials', 'General industrial machinery', 12],
   ['TALVOR', 'Talvory Aerospace Inc.', 'Industrials', 'Aircraft parts', 12],
   ['OSTLER', 'Ostlerand Freight Lines', 'Industrials', 'Trucking', 12],
@@ -80,9 +83,23 @@ const OPEN = 14.5 * HOUR;   // sessions run 14:30 to 21:00 UTC on weekdays; the 
 const CLOSE = 21 * HOUR;
 const YEAR = 365.25 * DAY;
 const ANCHOR = Date.UTC(2026, 0, 1);
+const FIRST_SESSION = Date.UTC(2015, 0, 5) / DAY;
 // Slow to fast: years-long trends down to minute-by-minute movement.
 const LAYERS = [[400 * DAY, 0.3], [120 * DAY, 0.16], [30 * DAY, 0.09], [7 * DAY, 0.05], [DAY, 0.024], [6 * HOUR, 0.011], [HOUR, 0.005], [900000, 0.0025], [120000, 0.001]];
 
+// Trading-day counter: weekdays since the Monday before 1 January 1970.
+const weekdayCount = (d) => { const weeks = Math.floor((d + 3) / 7); const rest = ((d + 3) % 7 + 7) % 7; return weeks * 5 + Math.min(rest, 4); };
+// The price path runs on a clock that only moves while the market is open, so a session
+// opens where the last one closed, give or take a small step: without this each day's
+// open landed wherever seventeen hours of noise had carried it and a daily chart looked
+// like scattered dots. One session is 1.4 days on this clock (five a week make seven days,
+// so trends keep their length), of which the last 2% is the overnight step.
+const SESSION = 1.4 * DAY, OVERNIGHT = 0.02;
+function marketClock(t) {
+  const d = sessionDay(t);
+  const part = Math.min(1, Math.max(0, (t - (d * DAY + OPEN)) / (CLOSE - OPEN)));
+  return (weekdayCount(d) + part * (1 - OVERNIGHT)) * SESSION;
+}
 function pathAt(seed, tMs, scale = 1) {
   let sum = 0;
   for (let k = 0; k < LAYERS.length; k++) sum += LAYERS[k][1] * scale * noise(tMs / LAYERS[k][0], seed * 100 + k);
@@ -195,9 +212,9 @@ function yearOf(quarters) {
 const columns = (rows) => { const v = {}; for (const key of Object.keys(rows[0] || {})) v[key] = rows.map((r) => r[key]); return v; };
 
 // Invented words for private issuers and companies planning to list.
-const WORDS = ['Vellorin', 'Tarkwell', 'Osmyra', 'Quenby', 'Halcyra', 'Brindlow', 'Yarrowen', 'Zintara', 'Fawkner', 'Lodestra', 'Mirevale', 'Corvanta',
-  'Ebberly', 'Wrenlow', 'Sablemere', 'Thornquay', 'Ulvessa', 'Pendrake', 'Glimmora', 'Kettlerow', 'Ashcombra', 'Juniprex', 'Rookhurst', 'Daventree',
-  'Nimbrel', 'Islawood', 'Xanthera', 'Varnholt', 'Emberlyn', 'Skellan', 'Orrinvale', 'Meadrick'];
+const WORDS = ['Vellorin', 'Tarkwell', 'Osmyra', 'Quenbrix', 'Halcyra', 'Brindlow', 'Yarrowen', 'Zintara', 'Fawkrine', 'Lodestra', 'Mirevale', 'Corvanta',
+  'Ebberly', 'Wrenlow', 'Sablemere', 'Thornquay', 'Ulvessa', 'Pendrovel', 'Glimmora', 'Kettlerow', 'Ashcombra', 'Juniprex', 'Rookhurlen', 'Daventrex',
+  'Nimbrel', 'Islawood', 'Xanthorel', 'Varnholt', 'Emberlyn', 'Skellan', 'Orrinvale', 'Meadrick'];
 const RAISE_KINDS = [['Labs Inc.', 'Other Technology'], ['Bio Inc.', 'Biotechnology'], ['Growth Fund II LP', 'Pooled Investment Fund'], ['Robotics Corp.', 'Other Technology'],
   ['Health Inc.', 'Other Health Care'], ['Property Partners LLC', 'Commercial'], ['Energy Holdings LLC', 'Other Energy'], ['Ventures III LP', 'Pooled Investment Fund'],
   ['Foods Inc.', 'Retailing'], ['Pay Inc.', 'Other Banking and Financial Services'], ['Aero Inc.', 'Manufacturing'], ['Residential REIT LLC', 'REITS and Finance']];
@@ -242,7 +259,7 @@ export function createDemoBackend({ now = Date.now } = {}) {
   const DEMO = 'Demo data';
   const NOTE = 'Invented for the demo. Not real companies, prices or filings.';
 
-  const priceAt = (c, t) => c.basePrice * Math.exp(c.drift * (t - ANCHOR) / YEAR) * pathAt(c.seed, t, c.index ? 0.3 : 1);
+  const priceAt = (c, t) => c.basePrice * Math.exp(c.drift * (t - ANCHOR) / YEAR) * pathAt(c.seed, marketClock(t), c.index ? 0.3 : 1);
 
   // One day's candle. Today's runs only as far as the present moment.
   function dayCandle(c, d, t) {
@@ -328,8 +345,6 @@ export function createDemoBackend({ now = Date.now } = {}) {
     return c;
   }
 
-  // Trading-day counter, used to give every company an earnings date once every 13 weeks.
-  const weekdayCount = (d) => { const weeks = Math.floor((d + 3) / 7); const rest = ((d + 3) % 7 + 7) % 7; return weeks * 5 + Math.min(rest, 4); };
 
   function pipeline(t) {
     const today = Math.floor(t / DAY);
@@ -410,8 +425,10 @@ export function createDemoBackend({ now = Date.now } = {}) {
       const t = now();
       const last = sessionDay(t);
       const candles = [];
-      for (let d = last - RANGES[range]; d <= last; d++) if (isWeekday(d)) candles.push(dayCandle(c, d, t));
-      return { symbol, interval: '1d', candles, delayed: false, sources: src(DEMO, NOTE) };
+      // "max" runs from the first session the demo market has: Monday 5 January 2015.
+      const first = RANGES[range] ? last - RANGES[range] : FIRST_SESSION;
+      for (let d = Math.max(first, FIRST_SESSION); d <= last; d++) if (isWeekday(d)) candles.push(dayCandle(c, d, t));
+      return { symbol, interval: '1d', candles, delayed: false, kind: 'stock', source: DEMO, ...reach(candles, range), sources: src(DEMO, NOTE) };
     },
 
     async company(symbol) {

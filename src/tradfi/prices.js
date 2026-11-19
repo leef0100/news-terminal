@@ -18,7 +18,11 @@
 //                                  at its own price, and its "change" is over 24 hours, not
 //                                  since the last close. Every such quote is marked `kind: 'perp'`.
 
-import { DAY, RANGES, num, round, pct } from './util.js';
+import { DAY, RANGES, MAX_CANDLES, num, round, pct, isoDay } from './util.js';
+
+// What every candle answer says about its reach: the first day it has, and whether the
+// source may hold more than the most it returns in one answer.
+export const reach = (rows, range) => ({ range, historyStart: rows.length ? isoDay(rows[0].time * 1000) : null, capped: rows.length >= MAX_CANDLES });
 
 const HL_API = 'https://api.hyperliquid.xyz/info';
 // Tickers that are unmistakably US shares. A perpetual is only ever shown as a share's price
@@ -37,7 +41,7 @@ export function createHyperliquidPerps({ source, env = {}, now = Date.now }) {
   // Every market on the venue: name without the venue prefix -> its latest figures.
   function universe(led) {
     return post({ type: 'metaAndAssetCtxs', dex }, {
-      ttlMs: 10000, staleMs: 90000, cost: 20,
+      ttlMs: 15000, staleMs: 90000, cost: 20, shared: true,
       transform: (d) => {
         const out = new Map();
         const ctxs = d?.[1] || [];
@@ -93,24 +97,29 @@ export function createHyperliquidPerps({ source, env = {}, now = Date.now }) {
       if (!m) return null;
       // Rounded to the day so everyone asking within a day shares one upstream answer.
       const endTime = Math.floor(now() / DAY) * DAY + DAY;
-      const days = RANGES[range];
+      // "max" asks for as far back as the venue serves: its documentation says only the most
+      // recent 5,000 candles are available. The weight is 20 plus one per 60 candles returned,
+      // counted here as if every candle asked for comes back.
+      const days = RANGES[range] ?? MAX_CANDLES;
       const rows = await post({ type: 'candleSnapshot', req: { coin: m.coin, interval: '1d', startTime: endTime - days * DAY, endTime } }, {
-        ttlMs: 60000, staleMs: 600000, cost: 20 + Math.ceil(days / 60),
+        // Daily candles change only in their last bar, and the live price comes from the quote.
+        ttlMs: 300000, staleMs: 3600000, cost: 20 + Math.ceil(days / 60),
         transform: (d) => (Array.isArray(d) ? d : []).map((c) => ({ time: Math.floor(Number(c.t) / 1000), open: num(c.o), high: num(c.h), low: num(c.l), close: num(c.c), volume: num(c.v) }))
-          .filter((c) => Number.isFinite(c.time) && c.open !== null && c.close !== null).sort((a, b) => a.time - b.time)
+          .filter((c) => Number.isFinite(c.time) && c.open !== null && c.high !== null && c.low !== null && c.close !== null).sort((a, b) => a.time - b.time)
       }, led);
-      return { candles: rows, delayed: false, interval: '1d', kind: 'perp', source: `Hyperliquid perpetual (${m.coin})` };
+      return { candles: rows, delayed: false, interval: '1d', kind: 'perp', source: `Hyperliquid perpetual (${m.coin})`, ...reach(rows, range) };
     }
   };
 }
 
 export function createFinnhub({ source, key }) {
   const API = 'https://finnhub.io/api/v1';
+  const token = encodeURIComponent(key);
   return {
     name: 'Finnhub', enabled: source.enabled,
     async quote(symbol, led) {
       // The key travels in the address, as Finnhub documents; the cache key leaves it out.
-      const q = await led.read(source, `${API}/quote?symbol=${encodeURIComponent(symbol)}&token=${key}`, { ttlMs: 20000, staleMs: 120000, key: 'quote:' + symbol });
+      const q = await led.read(source, `${API}/quote?symbol=${encodeURIComponent(symbol)}&token=${token}`, { ttlMs: 30000, staleMs: 300000, key: 'quote:' + symbol });
       const price = num(q?.c), t = num(q?.t);
       // An unknown symbol comes back as all zeros.
       if (!(price > 0) || !(t > 0)) return null;
@@ -121,13 +130,13 @@ export function createFinnhub({ source, key }) {
       };
     },
     async candles() { return null; }, // daily history is a paid feature there
-    earnings: (from, to, led) => led.read(source, `${API}/calendar/earnings?from=${from}&to=${to}&token=${key}`, {
-      ttlMs: 3600000, staleMs: 86400000, key: `earnings:${from}:${to}`,
+    earnings: (from, to, led) => led.read(source, `${API}/calendar/earnings?from=${from}&to=${to}&token=${token}`, {
+      ttlMs: 3600000, staleMs: 86400000, key: `earnings:${from}:${to}`, shared: true,
       transform: (d) => (d?.earningsCalendar || []).map((e) => ({ symbol: String(e.symbol || '').toUpperCase(), date: String(e.date || ''), hour: String(e.hour || ''), quarter: num(e.quarter), year: num(e.year), epsEstimate: num(e.epsEstimate) }))
         .filter((e) => e.symbol && /^\d{4}-\d{2}-\d{2}$/.test(e.date))
     }),
-    ipos: (from, to, led) => led.read(source, `${API}/calendar/ipo?from=${from}&to=${to}&token=${key}`, {
-      ttlMs: 3600000, staleMs: 86400000, key: `ipo:${from}:${to}`,
+    ipos: (from, to, led) => led.read(source, `${API}/calendar/ipo?from=${from}&to=${to}&token=${token}`, {
+      ttlMs: 3600000, staleMs: 86400000, key: `ipo:${from}:${to}`, shared: true,
       transform: (d) => (d?.ipoCalendar || []).map((e) => ({
         company: String(e.name || ''), symbol: String(e.symbol || '').toUpperCase() || null, exchange: String(e.exchange || '') || null, date: String(e.date || ''),
         price: String(e.price || '') || null, status: ['expected', 'priced', 'filed', 'withdrawn'].includes(e.status) ? e.status : null
@@ -145,23 +154,28 @@ export function createTwelveData({ source, key }) {
     name: 'Twelve Data', enabled: source.enabled,
     async quote(symbol, led) {
       const q = await led.read(source, `${API}/quote?symbol=${encodeURIComponent(symbol)}`, { ttlMs: 60000, staleMs: 300000, init, transform: (d) => (d?.code === 404 || d?.code === 400 ? null : checked(d)) });
-      const price = num(q?.close);
+      const price = num(q?.close), at = num(q?.last_quote_at);
       if (!q || !(price > 0)) return null;
       return {
         price, changePct: num(q.percent_change) === null ? pct(price, num(q.previous_close)) : round(num(q.percent_change)), previousClose: num(q.previous_close),
-        open: num(q.open), high: num(q.high), low: num(q.low), volume: num(q.volume), asOf: num(q.timestamp) ? num(q.timestamp) * 1000 : null,
-        // Without a timestamp there is no telling how old the price is, so it is not called live.
-        delayed: !num(q.timestamp) || q.is_market_open === false, kind: 'stock', changeBasis: 'previous close', source: 'Twelve Data'
+        open: num(q.open), high: num(q.high), low: num(q.low), volume: num(q.volume),
+        // `last_quote_at` is the time of the latest one-minute bar. `timestamp` is when the
+        // current daily bar OPENED, hours before the price shown, so it is never used as the
+        // price's time; with only that to go on, the age is left unknown.
+        asOf: at ? at * 1000 : null,
+        // Without the time of the price there is no telling how old it is, so it is not called live.
+        delayed: !at || q.is_market_open === false, kind: 'stock', changeBasis: 'previous close', source: 'Twelve Data'
       };
     },
     async candles(symbol, range, led) {
-      const size = Math.ceil(RANGES[range] * 5 / 7) + 5;
+      // 5,000 is the most `outputsize` accepts (about twenty years of trading days).
+      const size = RANGES[range] ? Math.ceil(RANGES[range] * 5 / 7) + 5 : MAX_CANDLES;
       const rows = await led.read(source, `${API}/time_series?symbol=${encodeURIComponent(symbol)}&interval=1day&outputsize=${size}`, {
         ttlMs: 900000, staleMs: 86400000, init,
         transform: (d) => (d?.code === 404 || d?.code === 400 ? null : (checked(d).values || []).map((v) => ({ time: Math.floor(Date.parse(String(v.datetime).slice(0, 10) + 'T00:00:00Z') / 1000), open: num(v.open), high: num(v.high), low: num(v.low), close: num(v.close), volume: num(v.volume) }))
-          .filter((c) => Number.isFinite(c.time) && c.close !== null).sort((a, b) => a.time - b.time))
+          .filter((c) => Number.isFinite(c.time) && c.open !== null && c.high !== null && c.low !== null && c.close !== null).sort((a, b) => a.time - b.time))
       });
-      return rows ? { candles: rows, delayed: true, interval: '1d', kind: 'stock', source: 'Twelve Data (daily bars; the latest bar is the last completed or current session)' } : null;
+      return rows ? { candles: rows, delayed: true, interval: '1d', kind: 'stock', source: 'Twelve Data (daily bars; the latest bar is the last completed or current session)', ...reach(rows, range) } : null;
     }
   };
 }

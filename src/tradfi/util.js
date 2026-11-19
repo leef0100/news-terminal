@@ -11,7 +11,11 @@ export function bad(message) {
 }
 
 export const SYMBOL_RE = /^[A-Z0-9.\-:]{1,12}$/;
-export const RANGES = { '1m': 31, '6m': 183, '1y': 366, '5y': 1827 };
+// Days of history each chart range asks for. `max` is whatever the source holds, up to
+// MAX_CANDLES daily candles (about twenty years of trading days), the most the price sources
+// used here return in one answer.
+export const RANGES = { '1m': 31, '6m': 183, '1y': 366, '5y': 1827, max: null };
+export const MAX_CANDLES = 5000;
 
 export const num = (v) => {
   if (v === null || v === undefined || v === '') return null;
@@ -46,3 +50,14 @@ export const pick = (seed, slot, lo, hi) => lo + (hash(slot, seed) + 1) / 2 * (h
 
 export const round = (v, dp = 2) => (v === null || v === undefined || !Number.isFinite(v) ? null : Number(v.toFixed(dp)));
 export const pct = (a, b) => (a !== null && b ? round(((a - b) / b) * 100, 2) : null);
+
+// XML from outside is parsed only if it is plain data: no document type and no entity
+// declarations (the route by which a small file is made to expand without end), and no
+// larger than a feed has any reason to be. An HTML error page fails this check too, so it
+// is reported as a failure instead of being read as "a feed with nothing in it".
+export function plainXml(text, maxChars = 4e6) {
+  const s = String(text ?? '');
+  if (s.length > maxChars) throw new Error('XML answer too large');
+  if (/<!DOCTYPE|<!ENTITY/i.test(s)) throw new Error('Not a plain XML feed');
+  return s;
+}

@@ -30,6 +30,11 @@
   function obj(v) { return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; }
   function num(v) { return typeof v === 'number' && isFinite(v) ? v : null; }
   function str(v, max) { return typeof v === 'string' ? v.slice(0, max || 200) : typeof v === 'number' && isFinite(v) ? String(v) : ''; }
+  // Lookups in plain tables go through this, so a word from the server such as "constructor"
+  // can never fetch something inherited instead of an entry.
+  function has(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
+  function isPerp(x) { return x && x.kind === 'perp'; }
+  var PERP_WORDS = 'Price of a perpetual contract on Hyperliquid, which trades round the clock at its own price. It is not the stock exchange’s price, and the change shown is over 24 hours, not since the last close.';
   var SYM = /^[A-Z0-9.\-:]{1,12}$/;
   function sym(v) { var s = typeof v === 'string' ? v.trim().toUpperCase() : ''; return SYM.test(s) ? s : ''; }
   function fk(s) { return String(s).replace(/[^\w:.-]/g, ''); }
@@ -65,9 +70,10 @@
   function px(n) { n = num(n); return n == null ? DASH : fix(n, 2); }
   function compact(n) {
     var a = Math.abs(n);
-    if (a >= 1e12) return fix(n / 1e12, 2) + 'T';
-    if (a >= 1e9) return fix(n / 1e9, 2) + 'B';
-    if (a >= 1e6) return fix(n / 1e6, 1) + 'M';
+    // Each step starts where the one below would round up to it, so 999,960,000 is 1.00B and never "1,000.0M".
+    if (a >= 999.995e9) return fix(n / 1e12, 2) + 'T';
+    if (a >= 999.95e6) return fix(n / 1e9, 2) + 'B';
+    if (a >= 999.5e3) return fix(n / 1e6, 1) + 'M';
     if (a >= 1e4) return fix(n / 1e3, 0) + 'K';
     return trim(n, 0);
   }
@@ -84,7 +90,8 @@
     if (typeof value === 'string') return str(value, 60) || DASH;
     var v = num(value), u = str(unit, 24);
     if (v == null) return DASH;
-    if (u === '%' || /^percent/i.test(u)) return trim(v, 2) + '%';
+    // Rates keep at least one decimal, so 4.0% does not sit beside 4.25% looking like a different kind of figure.
+    if (u === '%' || /^percent/i.test(u)) return v.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 }) + '%';
     if (u === 'USD') return money(v);
     if (u === 'USD/share') return (v < 0 ? '-$' : '$') + fix(Math.abs(v), 2);
     if (u === 'shares') return compact(v);
@@ -151,8 +158,10 @@
   function pick(d, re) {
     var all = arr(d && d.sources).filter(function (s) { return s && typeof s === 'object'; });
     if (!re) return all;
-    var hit = all.filter(function (s) { return re.test(str(s.name) + ' ' + str(s.note) + ' ' + str(s.id) + ' ' + str(s.part)); });
-    return hit.length ? hit : all;
+    var hit = all.filter(function (s) { return re.test(str(s.name) + ' ' + str(s.id) + ' ' + str(s.part)); });
+    // A demo answer has one source for everything. A live block is credited only to the
+    // sources that are its own: never to whatever else happened to be in the same answer.
+    return hit.length || !(d && d.demo) ? hit : all;
   }
   // "Index prices are not connected on this server." rather than an empty hole.
   function gap(d, re, noun, verb) {
@@ -168,6 +177,7 @@
     if (err && err.name === 'TimeoutError') return noun + ' did not answer in time. Trying again shortly.';
     if (err && err.status === 502) return noun + ' could not be loaded: the source behind it did not answer. Trying again shortly.';
     if (err && err.status === 503) return noun + ' is not switched on for this server yet.';
+    if (err && err.status === 429) return noun + ' could not be loaded: too many requests from this address in the last minute. Trying again shortly.';
     return noun + ' could not be loaded. Trying again shortly.';
   }
   // Fills a block's small print: who supplied it, how old it is, and whether it is invented.
@@ -501,9 +511,9 @@
   }
   function drawIndexes(d) {
     var list = arr(d.indexes).map(obj).filter(function (x) { return str(x.name) || str(x.symbol); });
-    setNote(ui.idx.note, d, /index|price|quote|market/i);
+    setNote(ui.idx.note, d, /index|price|quote|market|perpetual|hyperliquid|finnhub|twelve/i);
     if (!changed('ov.idx', [list, list.length ? 0 : pick(d)])) return;
-    if (!list.length) { swap(ui.idx.body, sayBox(gap(d, /index|price|quote|market/i, 'Index prices', 'are'))); return; }
+    if (!list.length) { swap(ui.idx.body, sayBox(gap(d, /index|price|quote|market|perpetual|hyperliquid|finnhub|twelve/i, 'Index prices', 'are'))); return; }
     var grid = el('div', 'tfTiles');
     list.forEach(function (x) {
       var t = el('div', 'stTile tfTile tfIndex');
@@ -512,17 +522,19 @@
       var line = el('div', 'tfIdxLine');
       add(line, el('b', 'tfVal', px(x.price)), chgNode('span', x.changePct, 'tfChg'));
       var asOf = when(x.asOf);
-      add(t, top, line, spark(x.spark), el('span', 'muted small', (x.delayed ? 'Delayed' : 'Latest') + (asOf ? ' · as of ' + asOf : '')));
+      if (isPerp(x)) line.appendChild(el('span', 'stPill wait tfPerp', 'Perpetual'));
+      add(t, top, line, spark(x.spark), el('span', 'muted small', (isPerp(x) ? 'Perpetual contract price, not the index level · change over 24 hours' : x.delayed ? 'Delayed' : 'Latest') + (asOf ? ' · as of ' + asOf : '')));
       grid.appendChild(t);
     });
+    if (list.some(isPerp)) { var both = document.createDocumentFragment(); add(both, el('p', 'tfPerpNote small', PERP_WORDS), grid); swap(ui.idx.body, both); return; }
     swap(ui.idx.body, grid);
   }
   function drawSectors(d) {
     var list = arr(d.sectors).map(obj).filter(function (x) { return str(x.name) && num(x.changePct) != null; })
       .sort(function (a, b) { return b.changePct - a.changePct; });
-    setNote(ui.sec.note, d, /sector|price|quote|market/i);
+    setNote(ui.sec.note, d, /sector/i);
     if (!changed('ov.sec', [list, list.length ? 0 : pick(d)])) return;
-    if (!list.length) { swap(ui.sec.body, sayBox(gap(d, /sector|price|quote|market/i, 'Sector moves', 'are'))); return; }
+    if (!list.length) { swap(ui.sec.body, sayBox(gap(d, /sector/i, 'Sector moves', 'are'))); return; }
     var max = Math.max.apply(null, list.map(function (x) { return Math.abs(x.changePct); })) || 1;
     var row = el('ul', 'tfHeat');
     list.forEach(function (x) {
@@ -567,20 +579,24 @@
         var s = sym(r.symbol);
         if (!s || seen[s] || num(r.changePct) == null) return;
         seen[s] = true;
-        list.push({ symbol: s, name: str(r.name, 60), changePct: r.changePct, cap: num(r.marketCap), traded: num(r.price) != null && num(r.volume) != null ? r.price * r.volume : null, volume: num(r.volume) });
+        list.push({ symbol: s, name: str(r.name, 60), changePct: r.changePct, cap: num(r.marketCap), perp: isPerp(r),
+          traded: num(r.price) != null && num(r.volume) != null ? r.price * r.volume : num(r.volumeUsd), volume: num(r.volume) });
       });
     });
     // Area by market value when every company carries one; otherwise by value traded today.
     var by = list.length && list.every(function (r) { return r.cap > 0; }) ? 'cap' : list.every(function (r) { return r.traded > 0; }) ? 'traded' : 'volume';
     list = list.filter(function (r) { return r[by] > 0; }).sort(function (a, b) { return b[by] - a[by]; }).slice(0, 40);
-    setNote(ui.map.note, d, /mover|price|quote|market/i);
+    setNote(ui.map.note, d, /mover|price|quote|market|perpetual|hyperliquid|finnhub|twelve/i);
     if (!changed('ov.map', [list, by, list.length ? 0 : pick(d)])) return;
     mapItems = list; mapBy = by;
-    if (list.length < 2) { mapItems = []; swap(ui.map.body, sayBox(gap(d, /mover|price|quote|market/i, 'The market map', 'is'))); return; }
+    var perps = list.some(function (r) { return r.perp; });
+    var moveWords = perps ? 'the 24-hour change of each company’s perpetual contract on Hyperliquid (not its exchange price)' : 'today’s change';
+    var byWords = perps && by === 'traded' ? 'value traded in the perpetual contract over 24 hours' : MAP_WORDS[by];
+    if (list.length < 2) { mapItems = []; swap(ui.map.body, sayBox(gap(d, /mover|price|quote|market|perpetual|hyperliquid|finnhub|twelve/i, 'The market map', 'is'))); return; }
     var frag = document.createDocumentFragment();
     var box = el('div', 'tfMapBox'); box.id = 'tfMapBox';
     box.setAttribute('role', 'group');
-    box.setAttribute('aria-label', 'Market map: one button per company, sized by ' + MAP_WORDS[by] + ' and shaded by today’s change');
+    box.setAttribute('aria-label', 'Market map: one button per company, sized by ' + byWords + ' and shaded by ' + moveWords);
     frag.appendChild(box);
     var legend = el('div', 'tfMapLegend');
     var scale = el('div', 'tfMapScale'); scale.setAttribute('aria-hidden', 'true');
@@ -589,7 +605,7 @@
       sw.style.setProperty('--m', v ? shade(v) : '0%');
       scale.appendChild(sw);
     });
-    add(legend, scale, el('p', 'muted small', 'Shade shows today’s change, deepest at ' + MAP_CAP + '% either way; each tile also prints it with an arrow. Tile area follows ' + MAP_WORDS[by] +
+    add(legend, scale, el('p', 'muted small', 'Shade shows ' + moveWords + ', deepest at ' + MAP_CAP + '% either way; each tile also prints it with an arrow. Tile area follows ' + byWords +
       ', on a square-root scale so the smallest companies stay readable: a tile four times the area is sixteen times the figure. Covers the ' + list.length + ' companies in the movers lists below, where the same figures are in tables.'));
     frag.appendChild(legend);
     swap(ui.map.body, frag);
@@ -622,6 +638,7 @@
       else if (q.h < 40) b.classList.add('short');
       add(b, el('b', null, r.symbol), el('span', 'mono', chg(r.changePct)));
       var text = r.symbol + (r.name ? ', ' + r.name : '') + ': ' + chg(r.changePct).replace('▲ ', 'up ').replace('▼ ', 'down ') + '. ' +
+        (r.perp ? 'Perpetual contract on Hyperliquid, 24-hour change, not the exchange price. ' : '') +
         (mapBy === 'cap' ? 'Market value ' + money(r.cap) : mapBy === 'traded' ? 'Value traded ' + money(r.traded) : 'Volume ' + compact(r.volume)) + '. Open the company page.';
       b.setAttribute('aria-label', text);
       b.title = text;
@@ -635,10 +652,14 @@
   function drawMovers(d, force) {
     var mv = obj(d.movers);
     var lists = MOVERS.map(function (m) { return arr(mv[m[0]]).map(obj).filter(function (r) { return sym(r.symbol); }); });
-    setNote(ui.mov.note, d, /mover|price|quote|market/i);
-    if (!changed('ov.mov', [lists, pick(d).length]) && !force) return;
-    if (!lists.some(function (l) { return l.length; })) { swap(ui.mov.body, sayBox(gap(d, /mover|price|quote|market/i, 'Movers', 'are'))); return; }
+    setNote(ui.mov.note, d, /mover|price|quote|market|perpetual|hyperliquid|finnhub|twelve/i);
+    if (!changed('ov.mov', [lists, pick(d).length, mv.universe]) && !force) return;
+    if (!lists.some(function (l) { return l.length; })) { swap(ui.mov.body, sayBox(gap(d, /mover|price|quote|market|perpetual|hyperliquid|finnhub|twelve/i, 'Movers', 'are'))); return; }
     var grid = el('div', 'tfThree');
+    var perps = lists.some(function (l) { return l.some(isPerp); });
+    // Perpetual contracts have no share volume; what they have is dollars traded in 24 hours.
+    var vol = function (r) { return num(r.volume) != null ? r.volume : num(r.volumeUsd); };
+    var cols = perps ? MCOLS.map(function (c) { return c.id === 'volume' ? { id: 'volume', label: 'Traded, 24h' } : c.id === 'changePct' ? { id: 'changePct', label: 'Change, 24h' } : c; }) : MCOLS;
     MOVERS.forEach(function (m, i) {
       var state = st.mv[m[0]] || (st.mv[m[0]] = { sort: m[2], dir: m[3] });
       var box = el('div', 'tfMover');
@@ -647,18 +668,19 @@
       if (!lists[i].length) { box.appendChild(el('p', 'muted small', 'Nothing to list.')); grid.appendChild(box); return; }
       var table = el('table', 'screener tfRows');
       table.setAttribute('aria-labelledby', h.id);
-      table.appendChild(sortHead(MCOLS, state, 'mv-' + m[0] + '-', function () { drawMovers(st.ov, true); }));
+      table.appendChild(sortHead(cols, state, 'mv-' + m[0] + '-', function () { drawMovers(st.ov, true); }));
       var body = el('tbody');
       lists[i].slice().sort(function (a, b) {
-        return cmp(state.sort === 'symbol' ? sym(a.symbol) : num(a[state.sort]), state.sort === 'symbol' ? sym(b.symbol) : num(b[state.sort]), state.dir);
+        var val = function (r) { return state.sort === 'symbol' ? sym(r.symbol) : state.sort === 'volume' ? vol(r) : num(r[state.sort]); };
+        return cmp(val(a), val(b), state.dir);
       }).forEach(function (r) {
         var s = sym(r.symbol);
         var tr = el('tr', 'tfRowLink');
         var name = el('th'); name.scope = 'row';
-        var a = symLink(s, str(r.name, 60));
+        var a = symLink(s, str(r.name, 60) + (isPerp(r) ? ' · perpetual' : ''));
         a.dataset.fk = fk('mvr-' + m[0] + '-' + s);
         name.appendChild(a);
-        add(tr, name, el('td', 'mono', px(r.price)), chgNode('td', r.changePct), el('td', 'mono', num(r.volume) == null ? DASH : compact(r.volume)));
+        add(tr, name, el('td', 'mono', px(r.price)), chgNode('td', r.changePct), el('td', 'mono', num(r.volume) != null ? compact(r.volume) : num(r.volumeUsd) != null ? money(r.volumeUsd) : DASH));
         // The whole row opens the company; the link in it does the same for keyboards.
         tr.addEventListener('click', function (e) { if (!e.target.closest('a')) go(s); });
         body.appendChild(tr);
@@ -669,6 +691,13 @@
       box.appendChild(wrap);
       grid.appendChild(box);
     });
+    var uni = str(mv.universe, 300);
+    if (perps || uni) {
+      var both = document.createDocumentFragment();
+      add(both, el('p', 'tfPerpNote small', (perps ? PERP_WORDS + ' ' : '') + uni), grid);
+      swap(ui.mov.body, both);
+      return;
+    }
     swap(ui.mov.body, grid);
   }
 
@@ -758,6 +787,15 @@
       t.appendChild(el('span', 'muted small', 'Previous: ' + (m.previous == null ? DASH : withUnit(m.previous, m.unit))));
       grid.appendChild(t);
     });
+    // FRED's terms ask for its notice wherever its figures are shown.
+    var fred = pick(d).filter(function (x) { return x.state === 'ok' && /^FRED/.test(str(x.name)) && /FRED/.test(str(x.note)); })[0];
+    if (fred) {
+      var both = document.createDocumentFragment(), np = el('p', 'muted small tfFred', str(fred.note, 240) + ' ');
+      np.appendChild(outLink('https://fred.stlouisfed.org/docs/api/terms_of_use.html', 'FRED terms of use'));
+      add(both, grid, np);
+      swap(ui.mac.body, both);
+      return;
+    }
     swap(ui.mac.body, grid);
   }
   function drawOverview() {
@@ -797,7 +835,7 @@
     saveWatch(); drawWatch();
   }
   function drawWatch() {
-    setNote(ui.wat.note, st.wq, /quote|price|market/i, st.watch.length + ' of ' + MAXW);
+    setNote(ui.wat.note, st.wq, /quote|price|market|perpetual|hyperliquid|finnhub|twelve/i, st.watch.length + ' of ' + MAXW);
     var rows = st.watch.map(function (s) { return [s, st.quotes[s] || null]; });
     if (!changed('ov.wat', [rows, st.wErr])) return;
     var frag = document.createDocumentFragment();
@@ -821,7 +859,7 @@
       var s = r[0], q = r[1];
       var tr = el('tr');
       var name = el('th'); name.scope = 'row';
-      var a = symLink(s, q ? (q.unknown ? 'Not a listed symbol here' : str(q.name, 60) + (q.delayed ? ' · delayed' : '')) : 'Waiting for a quote');
+      var a = symLink(s, q ? (q.unknown ? 'Not a listed symbol here' : [str(q.name, 60), isPerp(q) ? 'perpetual price, 24h change' : q.delayed ? 'delayed' : '', num(q.price) == null ? 'no price source connected' : ''].filter(Boolean).join(' · ')) : 'Waiting for a quote');
       a.dataset.fk = fk('w-' + s);
       name.appendChild(a);
       var rm = el('button', 'xpRemove tfRm', '×');
@@ -836,6 +874,7 @@
     table.appendChild(body);
     var wrap = el('div', 'tableWrap'); wrap.appendChild(table);
     frag.appendChild(wrap);
+    if (rows.some(function (r) { return isPerp(r[1]); })) frag.appendChild(el('p', 'tfPerpNote small', PERP_WORDS));
     swap(ui.watBody, frag);
   }
   function quoteBatch(list) {
@@ -864,7 +903,7 @@
       answers.forEach(function (d) {
         st.wq = d;
         arr(d.quotes).map(obj).forEach(function (q) { var s = sym(q.symbol); if (s && watching(s)) st.quotes[s] = q; });
-        if (!arr(d.quotes).length && pick(d).some(function (s) { return s.state !== 'ok'; })) st.wErr = gap(d, /quote|price|market/i, 'Quotes', 'are');
+        if (!arr(d.quotes).length && pick(d).some(function (s) { return s.state !== 'ok'; })) st.wErr = gap(d, /quote|price|market|perpetual|hyperliquid|finnhub|twelve/i, 'Quotes', 'are');
       });
       if (st.view === 'stocks' && !st.co.on) drawWatch();
     }).catch(function (err) {
@@ -877,12 +916,13 @@
 
   // ----- company: quote -----
   function priceLabel(q) {
+    if (isPerp(q)) return 'Perpetual contract price';
     if (q.delayed === 'eod' || q.eod === true || q.endOfDay === true || /end.?of.?day|eod|close/i.test(str(q.session) + str(q.priceType))) return 'End of day';
     return q.delayed ? 'Delayed' : '';
   }
   function drawQuote() {
     var d = st.co.qData, q = st.co.quote, s = st.sym;
-    setNote(ui.quote.note, d, /quote|price|market/i);
+    setNote(ui.quote.note, d, /quote|price|market|perpetual|hyperliquid|finnhub|twelve/i);
     if (!changed('co.quote', [q, watching(s), d ? pick(d) : 0, st.co.qErr])) return;
     var frag = document.createDocumentFragment();
     var top = el('div', 'tfQuoteTop');
@@ -891,10 +931,10 @@
       var label = priceLabel(q), asOf = when(q.asOf);
       add(left, el('b', 'tfPrice mono', px(q.price)), chgNode('span', q.changePct, 'tfChg'));
       if (label) left.appendChild(el('span', 'stPill wait', label));
-      var sub = el('p', 'muted small', 'US dollars' + (label ? ' · ' + label.toLowerCase() + ' price' : '') + (asOf ? ' · as of ' + asOf : ''));
+      var sub = el('p', 'muted small', 'US dollars' + (isPerp(q) ? ' · ' + (str(q.source, 80) || 'Hyperliquid perpetual') + ' · change over 24 hours' : label ? ' · ' + label.toLowerCase() + ' price' : '') + (asOf ? ' · as of ' + asOf : ''));
       var wrapL = el('div'); add(wrapL, left, sub); top.appendChild(wrapL);
     } else {
-      top.appendChild(el('p', 'emptyBox', st.co.qErr || (d ? gap(d, /quote|price|market/i, 'Prices', 'are') : 'Loading the price…')));
+      top.appendChild(el('p', 'emptyBox', st.co.qErr || (d ? gap(d, /quote|price|market|perpetual|hyperliquid|finnhub|twelve/i, 'Prices', 'are') : 'Loading the price…')));
     }
     var on = watching(s);
     var w = el('button', 'btn toggle' + (on ? ' on' : ''), on ? '✓ In your watchlist' : '+ Add to watchlist');
@@ -913,7 +953,12 @@
     top.appendChild(w);
     frag.appendChild(top);
     if (ui.coMsg) { var m = el('p', 'tfMsg'); m.setAttribute('role', 'status'); m.textContent = ui.coMsg; frag.appendChild(m); ui.coMsg = ''; }
-    if (q) {
+    if (q && isPerp(q)) {
+      frag.appendChild(el('p', 'tfPerpNote small', PERP_WORDS + ' No exchange price source is connected for this share, so there is no open, day range, previous close, share volume or market value to show.'));
+      var pg = el('div', 'mStats flush');
+      add(pg, tile('Traded in 24 hours', money(q.volumeUsd), 'US dollars, in the perpetual contract'), tile('Exchange price', 'Not connected', 'Needs a share-price source'));
+      frag.appendChild(pg);
+    } else if (q) {
       var grid = el('div', 'mStats flush');
       var lo = num(q.low), hi = num(q.high);
       add(grid,
@@ -1051,6 +1096,7 @@
     forget('co.candles');
     if (st.series) { st.series.setData([]); st.volume.setData([]); st.ema50.setData([]); st.ema200.setData([]); }
     ui.chartBox.setAttribute('aria-label', 'Price chart');
+    ui.chartCard.h.textContent = 'Price chart';
   }
   function utcDay(sec) { var d = new Date(sec * 1000); return d.getUTCDate() + ' ' + MONTHS[d.getUTCMonth()] + ' ' + d.getUTCFullYear(); }
   function drawCandles() {
@@ -1073,10 +1119,12 @@
     var hi = Math.max.apply(null, list.map(function (x) { return x.high; })), lo = Math.min.apply(null, list.map(function (x) { return x.low; }));
     var move = first.close ? (last.close - first.close) / first.close * 100 : null;
     var l50 = e50.length ? e50[e50.length - 1] : null, l200 = e200.length ? e200[e200.length - 1] : null;
-    var text = who + ', ' + RANGE_WORDS[c.range] + ': ' + list.length + ' ' + size + (list.length === 1 ? ' candle' : ' candles') + (st.co.size === 'd' ? '' : ' built from ' + c.list.length + ' daily ones') + ', from ' + utcDay(c.list[0].time) + ' to ' + utcDay(c.list[c.list.length - 1].time) +
+    var reach = c.range !== 'max' ? '' : c.capped ? ' The source returns at most ' + c.list.length.toLocaleString('en-US') + ' daily candles in one answer, so earlier history may exist that is not shown.' : ' This is all the history the source holds: it starts on ' + utcDay(c.list[0].time) + '.';
+    var text = (c.perp ? 'Perpetual contract prices from Hyperliquid, not stock exchange prices. ' : '') + who + ', ' + RANGE_WORDS[c.range] + ': ' + list.length + ' ' + size + (list.length === 1 ? ' candle' : ' candles') + (st.co.size === 'd' ? '' : ' built from ' + c.list.length + ' daily ones') + ', from ' + utcDay(c.list[0].time) + ' to ' + utcDay(c.list[c.list.length - 1].time) +
       '. Latest close ' + px(last.close) + '; change over the range ' + chg(move) + '; high ' + px(hi) + ', low ' + px(lo) +
       '. EMA 50 of ' + size + ' closes: ' + (l50 == null ? 'needs 50 candles, not drawn here' : px(l50)) + '. EMA 200: ' + (l200 == null ? 'needs 200 candles, not drawn here' : px(l200)) + '.' + (c.note ? ' ' + c.note : '') +
-      (c.delayed ? ' Prices are delayed.' : '') + (c.demo ? ' Demo: invented prices.' : '');
+      reach + (c.delayed ? ' Prices are delayed.' : '') + (c.demo ? ' Demo: invented prices.' : '');
+    ui.chartCard.h.textContent = c.perp ? 'Price chart: perpetual contract, not the exchange price' : 'Price chart';
     ui.chartSum.textContent = text;
     ui.chartBox.setAttribute('aria-label', 'Candlestick price chart with volume bars and two moving averages. ' + text);
     ensureChart();
@@ -1100,12 +1148,7 @@
     if (!s || st.co.unknown) return;
     ui.chartCard.sec.setAttribute('aria-busy', 'true');
     var note = '';
-    api('/candles?symbol=' + encodeURIComponent(s) + '&range=' + range).catch(function (err) {
-      // A server without a longer history refuses "max": show its five years and say so.
-      if (range !== 'max' || err.status !== 400) throw err;
-      note = 'This server holds at most 5 years of history, so that is what is shown.';
-      return api('/candles?symbol=' + encodeURIComponent(s) + '&range=5y');
-    }).then(function (d) {
+    api('/candles?symbol=' + encodeURIComponent(s) + '&range=' + range).then(function (d) {
       if (seq !== st.co.cSeq || s !== st.sym) return; // the viewer has moved on to another company or range
       ui.chartCard.sec.removeAttribute('aria-busy');
       var seen = {};
@@ -1116,9 +1159,9 @@
         return true;
       }).map(function (c) { return { time: c.time, open: c.open, high: c.high, low: c.low, close: c.close, volume: num(c.volume) || 0 }; })
         .sort(function (a, b) { return a.time - b.time; });
-      setNote(ui.chartCard.note, d, /candle|price|quote|market|history/i, d.delayed ? 'Delayed' : '');
-      st.co.candles = { range: range, list: list, note: note, delayed: Boolean(d.delayed), demo: Boolean(d.demo), message: list.length ? '' : gap(d, /candle|price|quote|market|history/i, 'Price history', 'is') };
-      if (changed('co.candles', [s, range, list, note])) drawCandles();
+      setNote(ui.chartCard.note, d, /candle|price|quote|market|history|perpetual|hyperliquid|twelve/i, isPerp(d) ? 'Perpetual contract' : d.delayed ? 'Delayed' : '');
+      st.co.candles = { range: range, list: list, note: note, delayed: Boolean(d.delayed), demo: Boolean(d.demo), perp: isPerp(d), capped: d.capped === true, message: list.length ? '' : gap(d, /candle|price|quote|market|history|perpetual|hyperliquid|twelve/i, 'Price history', 'is') };
+      if (changed('co.candles', [s, range, list, note, isPerp(d), d.capped === true])) drawCandles();
     }).catch(function (err) {
       if (seq !== st.co.cSeq || s !== st.sym) return;
       ui.chartCard.sec.removeAttribute('aria-busy');
@@ -1177,8 +1220,24 @@
     var s = fix(Math.abs(n), dp);
     return n < 0 && Number(Math.abs(n).toFixed(dp)) !== 0 ? '(' + s + ')' : s;
   }
-  function yoy(values, i, lag) {
-    var cur = num(values[i]), base = num(values[i + lag]);
+  // Which column holds the same period a year before column i. With period end dates this is
+  // the column ending 350 to 380 days earlier, wherever it sits: a missing quarter or a
+  // changed year-end must not make "a year earlier" mean some other period. Without dates
+  // it is the column `lag` places on, as before.
+  function yearBefore(ends, i, lag, count) {
+    var a = ymd(ends[i]);
+    if (!a) return ends.length ? -1 : (i + lag < count ? i + lag : -1);
+    var t = Date.UTC(a.y, a.m, a.d);
+    for (var j = i + 1; j < ends.length; j++) {
+      var b = ymd(ends[j]);
+      if (!b) continue;
+      var days = (t - Date.UTC(b.y, b.m, b.d)) / 86400000;
+      if (days >= 350 && days <= 380) return j;
+    }
+    return -1;
+  }
+  function yoy(values, i, at) {
+    var cur = num(values[i]), base = at < 0 ? null : num(values[at]);
     if (cur == null || base == null) return { text: DASH, cls: '', label: 'No figure a year earlier' };
     if (base <= 0) return { text: 'n/m', cls: '', label: 'Not meaningful: the year-earlier figure was zero or negative' };
     var p = (cur - base) / base * 100;
@@ -1211,7 +1270,7 @@
     var periods = arr(S.periods).map(function (p) { return str(p, 16); });
     var rows = arr(S[st.co.tab]);
     setNote(ui.stmt.note, d, /sec|edgar|filing|statement|fundamental/i);
-    if (!changed('co.stmt', [st.co.tab, st.co.per, periods, rows, st.co.open]) && !force) return;
+    if (!changed('co.stmt', [st.co.tab, st.co.per, periods, S.periodEnds, rows, st.co.open, d.statementsNote]) && !force) return;
     var frag = document.createDocumentFragment();
     var bar = el('div', 'row between tfStmtBar');
     var segs = el('div', 'tfSegs');
@@ -1233,7 +1292,7 @@
     if (!periods.length || !rows.length) {
       frag.appendChild(sayBox(pick(d, /sec|edgar|filing|statement|fundamental/i).some(function (s) { return s.state !== 'ok'; })
         ? gap(d, /sec|edgar|filing|statement|fundamental/i, 'Financial statements', 'are')
-        : 'No ' + st.co.per + ' ' + TAB_WORDS[st.co.tab].toLowerCase() + ' has been reported for this company.'));
+        : str(d.statementsNote, 300) || 'No ' + st.co.per + ' ' + TAB_WORDS[st.co.tab].toLowerCase() + ' has been reported for this company.'));
       swap(ui.stmt.body, frag);
       return;
     }
@@ -1241,6 +1300,8 @@
     var hasShare = false, hasCount = false, marked = false;
     walk(rows, function (r) { if (r.unit === 'USD/share') hasShare = true; if (r.unit === 'shares') hasCount = true; });
     var lag = st.co.per === 'quarterly' ? 4 : 1;
+    var ends = arr(S.periodEnds).map(function (e) { return str(e, 10); });
+    var before = yearBefore(ends, 0, lag, periods.length);
     var table = el('table', 'screener tfStmt');
     table.id = 'tfStmtTable';
     var cap = TAB_WORDS[st.co.tab] + ', ' + (st.co.per === 'annual' ? 'by fiscal year' : 'by fiscal quarter') + ', newest first. US dollars' + (usd.word ? ' in ' + usd.word : '') +
@@ -1251,8 +1312,12 @@
     var h0 = el('th', null, 'Line item'); h0.scope = 'col'; hr.appendChild(h0);
     var hT = el('th', null, 'Trend'); hT.scope = 'col'; hT.appendChild(el('span', 'sr', ', oldest period on the left')); hr.appendChild(hT);
     periods.forEach(function (p, i) {
-      var th = el('th', 'mono', p); th.scope = 'col'; hr.appendChild(th);
-      if (i === 0) { var hy = el('th', null, 'Change'); hy.scope = 'col'; hy.appendChild(el('span', 'sr', ' from a year earlier')); hy.title = 'Newest period against the same period a year earlier'; hr.appendChild(hy); }
+      var th = el('th', 'mono'); th.scope = 'col';
+      th.appendChild(el('span', 'tfPer', p));
+      // A fiscal year is the company's own: the day it ends is printed under its name.
+      if (ymd(ends[i])) { th.appendChild(el('span', 'sr', ', ending ')); th.appendChild(el('span', 'tfPerEnd muted', day(ends[i]))); }
+      hr.appendChild(th);
+      if (i === 0) { var hy = el('th', null, 'Change'); hy.scope = 'col'; hy.appendChild(el('span', 'sr', ' from a year earlier')); if (before >= 0) hy.appendChild(el('span', 'tfPerEnd muted', 'vs ' + periods[before])); hy.title = 'Newest period against the same period a year earlier'; hr.appendChild(hy); }
     });
     var thead = el('thead'); thead.appendChild(hr); table.appendChild(thead);
     var body = el('tbody');
@@ -1291,7 +1356,7 @@
         if (Array.isArray(r.derived) && r.derived[i] && num(arr(r.values)[i]) != null) { marked = true; add(td, el('sup', 'tfMark', '†')); td.appendChild(el('span', 'sr', ' (computed)')); }
         tr.appendChild(td);
         if (i === 0) {
-          var c = yoy(arr(r.values), 0, lag);
+          var c = yoy(arr(r.values), 0, before);
           var cy = el('td', 'mono tfYoy ' + c.cls, c.text);
           if (c.label) cy.title = c.label;
           tr.appendChild(cy);
@@ -1303,7 +1368,7 @@
     table.appendChild(body);
     var wrap = el('div', 'tableWrap'); wrap.appendChild(table);
     frag.appendChild(wrap);
-    var foot = 'Trend bars run from the oldest period to the newest and are scaled to each row’s own range, so they show direction, not size. Change compares the newest period with the same period a year earlier' + (lag === 4 ? ' (four quarters back)' : '') + '; “n/m” means not meaningful because the earlier figure was zero or negative.';
+    var foot = 'Trend bars run from the oldest period to the newest and are scaled to each row’s own range, so they show direction, not size. Change compares the newest period with the same period a year earlier' + (before >= 0 ? ' (' + periods[before] + ')' : ', which is not among the periods shown') + '; “n/m” means not meaningful because the earlier figure was zero or negative.';
     if (marked) foot = '† Worked out here from reported figures, not reported by the company in this form. ' + foot;
     frag.appendChild(el('p', 'muted small tfFoot', foot));
     swap(ui.stmt.body, frag);
@@ -1432,7 +1497,7 @@
     drawCalendar();
     loadCalendar();
   }
-  function evKind(e) { var k = str(e.kind, 20); return KIND_WORD[k] ? k : ''; }
+  function evKind(e) { var k = str(e.kind, 20); return has(KIND_WORD, k) ? k : ''; }
   // An event with a real moment is shown in the viewer's zone and filed under their date;
   // a session word ("after the close") or nothing at all stays under the date given.
   function evWhen(e, zone) {
@@ -1440,7 +1505,7 @@
     var ms = typeof t === 'number' ? (t < 1e11 ? t * 1000 : t) : NaN;
     if (typeof t === 'string') {
       var key = t.trim().toLowerCase();
-      if (SESSION[key]) return { date: date, text: SESSION[key], sort: key.charAt(0) === 'a' || /post/.test(key) ? 1e6 : -1 };
+      if (has(SESSION, key)) return { date: date, text: SESSION[key], sort: key.charAt(0) === 'a' || /post/.test(key) ? 1e6 : -1 };
       if (/^\d{4}-\d{2}-\d{2}T/.test(t)) ms = Date.parse(/Z|[+-]\d{2}:?\d{2}$/.test(t) ? t : t + 'Z');
       else {
         // A clock time is read in the zone the answer names ("timezone"), or UTC when it says so.
@@ -1453,7 +1518,7 @@
     return { date: date, text: '', sort: -2 };
   }
   function drawChips() {
-    var counts = {};
+    var counts = Object.create(null);
     arr(st.cal.data && st.cal.data.events).forEach(function (e) { var k = evKind(obj(e)); if (k) counts[k] = (counts[k] || 0) + 1; });
     var frag = document.createDocumentFragment();
     KINDS.forEach(function (k) {
@@ -1502,7 +1567,7 @@
       swap(ui.calList, frag);
       return;
     }
-    var days = {};
+    var days = Object.create(null);
     shown.forEach(function (x) { (days[x.when.date] = days[x.when.date] || []).push(x); });
     Object.keys(days).sort().forEach(function (date) {
       var p = ymd(date), wd = DAYS[new Date(Date.UTC(p.y, p.m, p.d)).getUTCDay()];
@@ -1568,11 +1633,11 @@
   }
   function drawIpos(c, name) {
     var d = st.ipo;
-    setNote(c.note, d, /sec|edgar|ipo|registration/i);
+    setNote(c.note, d, /sec|edgar|ipo|registration|finnhub/i);
     if (!changed(name, d ? [d.pipeline, pick(d)] : st.ipoErr || 'wait')) return;
     if (!d) { swap(c.body, sayBox(st.ipoErr || 'Loading the IPO pipeline…')); return; }
     var list = arr(d.pipeline).map(obj).filter(function (r) { return str(r.company); });
-    if (!list.length) { swap(c.body, sayBox(pick(d).some(function (s) { return s.state !== 'ok'; }) ? gap(d, /sec|edgar|ipo|registration/i, 'The IPO pipeline', 'is') : 'No companies are in the IPO pipeline right now.')); return; }
+    if (!list.length) { swap(c.body, sayBox(pick(d).some(function (s) { return s.state !== 'ok'; }) ? gap(d, /sec|edgar|ipo|registration|finnhub/i, 'The IPO pipeline', 'is') : 'No companies are in the IPO pipeline right now.')); return; }
     list.sort(function (a, b) { return cmp(str(a.expectedDate, 10), str(b.expectedDate, 10), 1) || cmp(str(a.filedAt, 30), str(b.filedAt, 30), -1); });
     var table = el('table', 'screener stTable tfIpo');
     table.appendChild(el('caption', 'sr', 'Companies that have filed to go public'));
@@ -1585,7 +1650,7 @@
       var name = el('th'); name.scope = 'row';
       add(name, el('b', null, str(r.company, 100)));
       if (str(r.symbol)) name.appendChild(el('span', 'mono muted small tfTick', str(r.symbol, 12)));
-      var stt = STATUS[str(r.status, 12)] || [str(r.status, 20) || 'Unknown', 'wait'];
+      var stt = has(STATUS, str(r.status, 12)) ? STATUS[str(r.status, 12)] : [str(r.status, 20) || 'Unknown', 'wait'];
       var sc = el('td'); sc.appendChild(el('span', 'stPill ' + stt[1], stt[0]));
       var fc = el('td'), url = safeUrl(r.url, SEC), form = str(r.form, 16) || 'Filing', filed = when(r.filedAt);
       if (url) fc.appendChild(outLink(url, form, 'Open the ' + form + ' filing by ' + str(r.company, 80) + ' on SEC.gov'));
@@ -1642,15 +1707,18 @@
     view.appendChild(pad);
   }
   function amount(v) { return typeof v === 'string' && v ? str(v, 20) : money(v); }
+  // A filing whose own document has not been read (yet, or at all): its amounts are unknown,
+  // which is not the same as the form saying "Indefinite".
+  function unread(r) { return r.detail === false; }
   function drawPrivate() {
     var d = st.pv.data;
     setNote(ui.pv.note, d, /sec|edgar|form d/i);
     setNote(ui.pHead.at, d, null, 'Form D and registration filings');
-    if (!changed('pv.list', [d ? d.raises : st.pv.err || 'wait', d ? pick(d) : 0, st.pv.sort, st.pv.dir, st.pv.industry, st.pv.q])) return;
+    if (!changed('pv.list', [d ? d.raises : st.pv.err || 'wait', d ? pick(d) : 0, d ? d.detailsPending : 0, st.pv.sort, st.pv.dir, st.pv.industry, st.pv.q])) return;
     if (!d) { ui.pvSum.textContent = ''; swap(ui.pvBody, sayBox(st.pv.err || 'Loading private raises…')); return; }
     var all = arr(d.raises).map(obj).filter(function (r) { return str(r.issuer); });
     // The industry list is built from what the filings themselves say.
-    var inds = {};
+    var inds = Object.create(null);
     all.forEach(function (r) { var i = str(r.industry, 60); if (i) inds[i] = (inds[i] || 0) + 1; });
     var names = Object.keys(inds).sort();
     if (changed('pv.inds', names)) {
@@ -1667,9 +1735,11 @@
     var key = st.pv.sort, text = key === 'issuer' || key === 'industry' || key === 'state' || key === 'firstSale' || key === 'filedAt';
     rows.sort(function (a, b) { return cmp(text ? str(a[key], 100) : num(a[key]), text ? str(b[key], 100) : num(b[key]), st.pv.dir); });
     var offered = 0, sold = 0, noOffer = 0;
-    rows.forEach(function (r) { if (num(r.amountOffered) == null) noOffer++; else offered += r.amountOffered; sold += num(r.amountSold) || 0; });
+    var unreadN = 0;
+    rows.forEach(function (r) { if (unread(r)) { unreadN++; return; } if (num(r.amountOffered) == null) noOffer++; else offered += r.amountOffered; sold += num(r.amountSold) || 0; });
     ui.pvSum.textContent = rows.length + (rows.length === all.length ? '' : ' of ' + all.length) + (rows.length === 1 ? ' filing' : ' filings') + ' shown: ' + money(offered) + ' offered, ' + money(sold) + ' sold' +
-      (noOffer ? ' (' + noOffer + (noOffer === 1 ? ' filing states' : ' filings state') + ' no fixed amount offered and ' + (noOffer === 1 ? 'is' : 'are') + ' left out of the offered total)' : '') + '.';
+      (noOffer ? ' (' + noOffer + (noOffer === 1 ? ' filing states' : ' filings state') + ' no fixed amount offered and ' + (noOffer === 1 ? 'is' : 'are') + ' left out of the offered total)' : '') + '.' +
+      (unreadN ? ' ' + unreadN + (unreadN === 1 ? ' filing is' : ' filings are') + ' listed without amounts' + (num(d.detailsPending) > 0 ? ' while the details are read from the SEC; this list will fill in shortly.' : ': the details could not be read, or only the newest filings are opened.') : '');
     if (!rows.length) { swap(ui.pvBody, sayBox('No filings match this filter. ' + all.length + ' are listed in all.')); return; }
     var table = el('table', 'screener tfRaises');
     table.id = 'tfRaises';
@@ -1683,7 +1753,7 @@
       if (url) fc.appendChild(outLink(url, form, 'Open the ' + form + ' filing by ' + str(r.issuer, 80) + ' on SEC.gov'));
       else fc.appendChild(el('span', 'muted', form));
       add(tr, name, el('td', 'tfWrapCell', str(r.industry, 60) || DASH), el('td', null, str(r.state, 20) || DASH),
-        el('td', 'mono', r.amountOffered == null ? 'Indefinite' : amount(r.amountOffered)), el('td', 'mono', amount(r.amountSold)),
+        el('td', 'mono', unread(r) ? 'Not read' : r.amountOffered == null ? 'Indefinite' : amount(r.amountOffered)), el('td', 'mono', unread(r) ? 'Not read' : amount(r.amountSold)),
         el('td', 'mono', ymd(r.firstSale) ? day(r.firstSale) : (str(r.firstSale, 24) || DASH)), el('td', 'mono', when(r.filedAt) || DASH), fc);
       body.appendChild(tr);
     });
@@ -1699,7 +1769,15 @@
     swap(ui.pvBody, frag);
   }
   function loadPrivate() {
-    api('/private').then(function (d) { st.pv.data = d; st.pv.err = ''; if (st.view === 'private') drawPrivate(); }).catch(function (err) {
+    clearTimeout(st.pv.soon);
+    api('/private').then(function (d) {
+      st.pv.data = d; st.pv.err = '';
+      if (st.view !== 'private') return;
+      drawPrivate();
+      // The server reads each filing's details in the background the first time: look again soon, a few times.
+      if (num(d.detailsPending) > 0 && (st.pv.tries = (st.pv.tries || 0) + 1) <= 8) st.pv.soon = setTimeout(function () { if (st.view === 'private' && !document.hidden) loadPrivate(); }, 4000);
+      else if (!(num(d.detailsPending) > 0)) st.pv.tries = 0;
+    }).catch(function (err) {
       if (st.pv.data) return;
       st.pv.err = failed(err, 'Private raises');
       if (st.view === 'private') drawPrivate();
@@ -1709,7 +1787,7 @@
   // =====================================================================================
   // lifecycle
   // =====================================================================================
-  function stop() { st.timers.forEach(clearInterval); st.timers = []; }
+  function stop() { st.timers.forEach(clearInterval); st.timers = []; clearTimeout(st.pv.soon); }
   function start() {
     stop();
     if (document.hidden) return;
@@ -1723,7 +1801,7 @@
       } else {
         drawOverview(); drawWatch();
         loadOverview(); loadWatch();
-        st.timers.push(setInterval(loadOverview, 30000), setInterval(loadWatch, 20000));
+        st.timers.push(setInterval(loadOverview, 30000), setInterval(loadWatch, 30000));
       }
     } else if (st.view === 'calendar') {
       drawCalendar(); showIpos();

@@ -8,14 +8,15 @@
 // identity is exactly what the SEC blocks. All calls share one budget set below the limit.
 
 import { XMLParser } from 'fast-xml-parser';
-import { bad, num } from './util.js';
+import { bad, num, plainXml } from './util.js';
+import { visitor } from './source.js';
 import { buildStatements, latestDei } from './xbrl.js';
 
 const WWW = 'https://www.sec.gov';
 const DATA = 'https://data.sec.gov';
 const HOUR = 3600000;
 const pad10 = (cik) => String(cik).padStart(10, '0');
-const xml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@', removeNSPrefix: true, parseTagValue: false });
+const xml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@', removeNSPrefix: true, parseTagValue: false, htmlEntities: true });
 
 // Both of the SEC's ticker files, reduced to rows of [symbol, name, cik, exchange].
 // company_tickers_exchange.json: { fields: ['cik','name','ticker','exchange'], data: [[...]] }
@@ -45,10 +46,14 @@ export function parseTickers(body) {
 // The "latest filings" Atom feed -> [{ form, company, cik, accession, filedAt, url }].
 // Entry titles read "S-1 - Example Corp (0001234567) (Filer)".
 export function parseCurrentFeed(text) {
-  const doc = xml.parse(String(text || ''));
+  const doc = xml.parse(plainXml(text));
+  // Anything that is not an Atom feed (an error page, a block notice) is a failure, never
+  // "no filings today".
+  if (!doc || typeof doc.feed !== 'object' && doc.feed !== '') throw new Error('Not an SEC filings feed');
   const out = [];
   const seen = new Set();
-  for (const e of [].concat(doc?.feed?.entry || [])) {
+  for (const e of [].concat(doc.feed?.entry || [])) {
+    if (!e || typeof e !== 'object') continue;
     const title = String(typeof e.title === 'object' ? e.title['#text'] : e.title || '');
     const m = /^(\S+(?:\s\S+)?) - (.+) \((\d{10})\) \(([^)]+)\)\s*$/.exec(title);
     if (!m) continue;
@@ -67,8 +72,8 @@ export function parseCurrentFeed(text) {
 
 // A Form D's primary_doc.xml -> the few facts shown. "Indefinite" amounts become null.
 export function parseFormD(text) {
-  const d = xml.parse(String(text || ''))?.edgarSubmission;
-  if (!d) throw new Error('Not a Form D document');
+  const d = xml.parse(plainXml(text, 1e6))?.edgarSubmission;
+  if (!d || typeof d !== 'object') throw new Error('Not a Form D document');
   const o = d.offeringData || {};
   const sale = o.typeOfFiling?.dateOfFirstSale || {};
   const date = String(sale.value || '').slice(0, 10);
@@ -78,7 +83,7 @@ export function parseFormD(text) {
     form: String(d.submissionType || 'D'),
     issuer: String(d.primaryIssuer?.entityName || '') || null,
     state: String(d.primaryIssuer?.issuerAddress?.stateOrCountry || '') || null,
-    industry: [group.industryGroupType, group.investmentFundInfo?.investmentFundType].filter(Boolean).map(String).join(': ') || null,
+    industry: [group.industryGroupType, (group.investmentFundInfo || o.investmentFundInfo)?.investmentFundType].filter(Boolean).map(String).join(': ') || null,
     amountOffered: num(amounts.totalOfferingAmount),   // null when "Indefinite"
     amountSold: num(amounts.totalAmountSold),
     firstSale: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : null
@@ -87,10 +92,10 @@ export function parseFormD(text) {
 
 const IPO_FORMS = { 'S-1': 'filed', 'S-1/A': 'filed', 'F-1': 'filed', 'F-1/A': 'filed', '424B4': 'priced', RW: 'withdrawn' };
 
-export function createEdgar({ source, now = Date.now, formDDetails = 25 }) {
+export function createEdgar({ source, now = Date.now, formDDetails = 25, formDWaitMs = 1500 }) {
   // --- Companies --------------------------------------------------------------------------
   async function tickers(led) {
-    const opts = { ttlMs: 24 * HOUR, staleMs: 7 * 24 * HOUR, transform: (body) => {
+    const opts = { ttlMs: 24 * HOUR, staleMs: 7 * 24 * HOUR, shared: true, maxBytes: 16 * 1024 * 1024, transform: (body) => {
       const list = parseTickers(body);
       return { list, bySymbol: new Map(list.map((c, i) => [c.symbol, { ...c, rank: i }])), byCik: new Map(list.slice().reverse().map((c) => [c.cik, c])) };
     } };
@@ -117,7 +122,8 @@ export function createEdgar({ source, now = Date.now, formDDetails = 25 }) {
 
   async function lookup(symbol, led) {
     const { bySymbol } = await tickers(led);
-    const c = bySymbol.get(symbol);
+    // The SEC writes share classes with a dash (BRK-B); people also type a dot (BRK.B).
+    const c = bySymbol.get(symbol) || bySymbol.get(symbol.replace(/\./g, '-'));
     if (!c) throw bad('Unknown symbol');
     return c;
   }
@@ -131,10 +137,13 @@ export function createEdgar({ source, now = Date.now, formDDetails = 25 }) {
         const filings = [];
         for (let i = 0; i < (r.accessionNumber || []).length && filings.length < 40; i++) {
           const acc = String(r.accessionNumber[i]);
-          const doc = String(r.primaryDocument?.[i] || '');
+          if (!/^\d{10}-\d{2}-\d{6}$/.test(acc)) continue;
+          // Only a plain file name is put into a link; anything else falls back to the filing's index page.
+          const named = String(r.primaryDocument?.[i] || '');
+          const doc = /^[\w.\-]+(\/[\w.\-]+)?$/.test(named) && !named.includes('..') ? named : '';
           filings.push({
-            form: String(r.form?.[i] || ''), filedAt: String(r.filingDate?.[i] || ''),
-            title: String(r.primaryDocDescription?.[i] || '') || String(r.form?.[i] || ''),
+            form: String(r.form?.[i] || '').slice(0, 20), filedAt: String(r.filingDate?.[i] || '').slice(0, 10),
+            title: (String(r.primaryDocDescription?.[i] || '') || String(r.form?.[i] || '')).slice(0, 160),
             url: `${WWW}/Archives/edgar/data/${Number(cik)}/${acc.replace(/-/g, '')}/${doc || acc + '-index.htm'}`
           });
         }
@@ -153,7 +162,7 @@ export function createEdgar({ source, now = Date.now, formDDetails = 25 }) {
   // (often several megabytes) is not kept. A company with no such file gets null.
   function financials(cik, led) {
     return led.read(source, `${DATA}/api/xbrl/companyfacts/CIK${pad10(cik)}.json`, {
-      ttlMs: HOUR, staleMs: 24 * HOUR, missing: [404], timeoutMs: 15000,
+      ttlMs: HOUR, staleMs: 24 * HOUR, missing: [404], timeoutMs: 15000, maxBytes: 64 * 1024 * 1024,
       transform: (facts) => ({
         ...buildStatements(facts),
         sharesOutstanding: latestDei(facts, 'EntityCommonStockSharesOutstanding', 'shares'),
@@ -164,7 +173,7 @@ export function createEdgar({ source, now = Date.now, formDDetails = 25 }) {
 
   // --- Newest filings of a form, across all companies ---------------------------------------
   const feed = (type, led) => led.read(source, `${WWW}/cgi-bin/browse-edgar?action=getcurrent&type=${encodeURIComponent(type)}&company=&dateb=&owner=include&start=0&count=40&output=atom`, {
-    ttlMs: 600000, staleMs: 2 * HOUR, as: 'text', transform: parseCurrentFeed
+    ttlMs: 600000, staleMs: 2 * HOUR, as: 'text', shared: true, transform: parseCurrentFeed
   });
 
   // New registration statements, final prospectuses and withdrawals. The feed matches form
@@ -190,26 +199,55 @@ export function createEdgar({ source, now = Date.now, formDDetails = 25 }) {
   }
 
   // Form D notices. The feed gives who filed and when; amounts and industry are inside each
-  // filing, so the newest few are opened, four at a time, and each is kept for a day (a
-  // filing never changes). Later refreshes only open the ones not seen before.
-  async function raises(led) {
-    const entries = (await feed('D', led)).filter((f) => f.form === 'D' || f.form === 'D/A');
-    const out = entries.map((f) => ({ issuer: f.company, industry: null, state: null, filedAt: f.filedAt, amountOffered: null, amountSold: null, firstSale: null, form: f.form, url: f.url, detail: false }));
-    const todo = entries.slice(0, formDDetails).map((f, i) => [f, i]);
-    let missed = 0;
+  // filing, one document apiece. Opening the newest few can take many seconds the first
+  // time, so that is done in the background, four at a time: an answer waits only a moment
+  // for it, lists what has been read so far, and says how many are still to come. A filing
+  // never changes, so each is read once and kept; one that could not be read is tried again
+  // after a minute.
+  const details = new Map();   // accession -> { at, data: {...} | null }
+  let filling = null;
+  function fill(entries) {
+    if (filling) return filling;
+    const todo = entries.filter((f) => { const d = details.get(f.accession); return !d || (d.data === undefined && now() - d.at > 60000); });
+    if (!todo.length) return null;
     const worker = async () => {
-      for (let job = todo.shift(); job; job = todo.shift()) {
-        const [f, i] = job;
+      for (let f = todo.shift(); f; f = todo.shift()) {
+        let data;   // undefined: could not be read just now
         try {
-          const r = await source.get(`${WWW}/Archives/edgar/data/${f.cik}/${f.accession.replace(/-/g, '')}/primary_doc.xml`, { ttlMs: 24 * HOUR, as: 'text', transform: parseFormD, missing: [404] });
-          if (r.data) Object.assign(out[i], { industry: r.data.industry, state: r.data.state, amountOffered: r.data.amountOffered, amountSold: r.data.amountSold, firstSale: r.data.firstSale, detail: true });
-          else missed += 1;
-        } catch { missed += 1; }
+          data = (await source.get(`${WWW}/Archives/edgar/data/${f.cik}/${f.accession.replace(/-/g, '')}/primary_doc.xml`, { ttlMs: 24 * HOUR, as: 'text', transform: parseFormD, missing: [404], maxBytes: 1024 * 1024 })).data;
+        } catch { /* left undefined */ }
+        details.delete(f.accession);
+        details.set(f.accession, { at: now(), data });
+        if (details.size > 600) details.delete(details.keys().next().value);
       }
     };
-    await Promise.all([worker(), worker(), worker(), worker()]);
-    if (missed) led.ok(source.name, `${source.note} Details could not be read for ${missed} of the newest filings; they are listed without amounts.`);
-    return out;
+    // Run outside the request that happened to start it: it is nobody's lookup in particular.
+    filling = visitor.exit(() => Promise.all([worker(), worker(), worker(), worker()])).catch(() => {}).finally(() => { filling = null; });
+    return filling;
+  }
+  async function raises(led) {
+    const entries = (await feed('D', led)).filter((f) => f.form === 'D' || f.form === 'D/A');
+    const newest = entries.slice(0, formDDetails);
+    const job = fill(newest);
+    if (job) {
+      let timer;
+      await Promise.race([job, new Promise((r) => { timer = setTimeout(r, formDWaitMs); timer.unref?.(); })]);
+      clearTimeout(timer);
+    }
+    const out = entries.map((f) => {
+      const d = details.get(f.accession)?.data;
+      return {
+        issuer: f.company, industry: d?.industry ?? null, state: d?.state ?? null, filedAt: f.filedAt, amountOffered: d?.amountOffered ?? null, amountSold: d?.amountSold ?? null,
+        firstSale: d?.firstSale ?? null, form: f.form, url: f.url, detail: Boolean(d)
+      };
+    });
+    const pending = newest.filter((f) => !details.has(f.accession)).length;
+    const missed = newest.filter((f) => details.has(f.accession) && !details.get(f.accession).data).length;
+    const notes = [source.note];
+    if (pending) notes.push(`Amounts for ${pending} of the newest filings are still being read from the SEC and will appear shortly.`);
+    if (missed) notes.push(`Details could not be read for ${missed} of the newest filings; they are listed without amounts.`);
+    if (pending || missed) led.ok(source.name, notes.join(' '));
+    return { raises: out, detailsPending: pending };
   }
 
   return { tickers, search, lookup, profile, financials, pipeline, raises };

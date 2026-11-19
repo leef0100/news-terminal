@@ -28,10 +28,10 @@ const periodLabel = (date, kind) => (kind === 'month' ? date.slice(0, 7) : kind 
 export function createFred({ source, key, now = Date.now }) {
   async function macro(led) {
     const rows = await Promise.all(MACRO.map(async (m) => {
-      const url = `${API}/series/observations?series_id=${m.id}&api_key=${key}&file_type=json&sort_order=desc&limit=6&units=${m.units}`;
+      const url = `${API}/series/observations?series_id=${m.id}&api_key=${encodeURIComponent(key)}&file_type=json&sort_order=desc&limit=6&units=${m.units}`;
       // Missing readings come as "."; they are skipped.
       const obs = await led.tryRead(source, url, {
-        ttlMs: 3600000, staleMs: 86400000, key: 'obs:' + m.id,
+        ttlMs: 3600000, staleMs: 86400000, key: 'obs:' + m.id, shared: true,
         transform: (d) => (d?.observations || []).map((o) => ({ date: String(o.date), value: num(o.value) })).filter((o) => o.value !== null && /^\d{4}-\d{2}-\d{2}$/.test(o.date))
       });
       if (!obs || !obs.length) return null;
@@ -46,13 +46,13 @@ export function createFred({ source, key, now = Date.now }) {
   async function releaseDates(led) {
     const year = new Date(now()).getUTCFullYear();
     const lists = await Promise.all(Object.keys(RELEASES).map(async (id) => {
-      const name = await led.tryRead(source, `${API}/release?release_id=${id}&api_key=${key}&file_type=json`, {
-        ttlMs: 86400000, staleMs: 7 * 86400000, key: 'release:' + id,
+      const name = await led.tryRead(source, `${API}/release?release_id=${id}&api_key=${encodeURIComponent(key)}&file_type=json`, {
+        ttlMs: 86400000, staleMs: 7 * 86400000, key: 'release:' + id, shared: true,
         transform: (d) => { const n = d?.releases?.[0]?.name; return typeof n === 'string' && n ? n : null; }
       });
       if (!name) return [];
-      const dates = await led.tryRead(source, `${API}/release/dates?release_id=${id}&api_key=${key}&file_type=json&realtime_start=${year}-01-01&include_release_dates_with_no_data=true&sort_order=desc&limit=200`, {
-        ttlMs: 6 * 3600000, staleMs: 3 * 86400000, key: `dates:${id}:${year}`,
+      const dates = await led.tryRead(source, `${API}/release/dates?release_id=${id}&api_key=${encodeURIComponent(key)}&file_type=json&realtime_start=${year}-01-01&include_release_dates_with_no_data=true&sort_order=desc&limit=200`, {
+        ttlMs: 6 * 3600000, staleMs: 3 * 86400000, key: `dates:${id}:${year}`, shared: true,
         transform: (d) => (d?.release_dates || []).map((r) => String(r.date)).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x))
       });
       return (dates || []).map((date) => ({ id: Number(id), name, date }));

@@ -157,7 +157,7 @@ await waitText('#tfChartSum', /last 6 months/);
 check('range switch reloads the chart', seen.slice(before).some((u) => u.startsWith('candles') && /range=6m/.test(u)) && await p.$eval('[data-fk="rg-6m"]', (n) => n.getAttribute('aria-pressed') === 'true'));
 await p.click('[data-fk="rg-max"]');
 await waitText('#tfChartSum', /longest history available/);
-check('Max range shows the longest history the server has, and says so if that is 5 years', /candles/.test(await text('#tfChartSum')), (await text('#tfChartSum')).match(/This server holds[^.]*\./)?.[0] || 'server answered range=max');
+check('Max range asks the server for it and says how far back the history goes', seen.slice(before).some((u) => /^candles.*range=max/.test(u)) && !seen.slice(before).some((u) => /^candles.*range=5y/.test(u)) && /This is all the history the source holds: it starts on 5 Jan 2015\./.test(await text('#tfChartSum')), (await text('#tfChartSum')).slice(-140));
 
 // candle sizes, exact numbers on a small daily series (two weeks and a month boundary)
 const T = (s) => Date.parse(s + 'T00:00:00Z') / 1000;
@@ -208,14 +208,14 @@ stubs.delete('candles');
 
 // ----- statements -----
 check('statements: a real table with a caption stating the unit', await p.$eval('#tfStmtTable', (t) => /^Income statement, by fiscal year, newest first\. US dollars in (millions|billions|thousands)/.test(t.caption.textContent) && t.querySelectorAll('thead th[scope=col]').length >= 4 && t.querySelectorAll('tbody th[scope=row]').length >= 5));
-check('periods are columns, newest first', await p.$$eval('#tfStmtTable thead th.mono', (n, want) => n.map((x) => x.textContent).join() === want.join(), company.statements.annual.periods));
+check('periods are columns, newest first', await p.$$eval('#tfStmtTable thead th.mono', (n, want) => n.map((x) => x.querySelector('.tfPer').textContent).join() === want.join(), company.statements.annual.periods));
 check('each row has a trend bar and the table a year-over-year column', await p.$$eval('#tfStmtTable tbody tr', (n) => n.filter((r) => r.querySelector('svg.tfTrend rect')).length >= 5) && /Change/.test(await text('#tfStmtTable thead')));
 await p.click('[data-fk="tab-balance"]');
 check('balance sheet tab', /^Balance sheet/.test(await text('#tfStmtTable caption')) && await p.evaluate(() => document.activeElement.dataset.fk === 'tab-balance'));
 await p.click('[data-fk="tab-cashflow"]');
 check('cash flow tab, with the computed row marked and footnoted', /^Cash flow statement/.test(await text('#tfStmtTable caption')) && await p.$$eval('#tfStmtTable .tfMark', (n) => n.length >= 1) && /† Worked out here from reported figures/.test(await text('#tfStmt')));
 await p.click('[data-fk="per-quarterly"]');
-check('quarterly switch', await p.$$eval('#tfStmtTable thead th.mono', (n, want) => n.map((x) => x.textContent).join() === want.join(), company.statements.quarterly.periods) && /by fiscal quarter/.test(await text('#tfStmtTable caption')));
+check('quarterly switch', await p.$$eval('#tfStmtTable thead th.mono', (n, want) => n.map((x) => x.querySelector('.tfPer').textContent).join() === want.join(), company.statements.quarterly.periods) && /by fiscal quarter/.test(await text('#tfStmtTable caption')));
 await p.click('[data-fk="per-annual"]');
 await p.click('[data-fk="tab-income"]');
 const parent = company.statements.annual.income.find((r) => r.children && r.children.length);
@@ -486,6 +486,122 @@ for (const [w, h] of [[390, 844], [768, 1024], [1440, 900]]) {
       await shot(name + '-390');
     }
   }
+}
+
+// ----- review: perpetual prices are labelled as such wherever they appear -----
+await p.setViewport({ width: 1440, height: 900 });
+{
+  const HLS = [{ name: 'Hyperliquid perpetuals', state: 'ok', note: 'Perpetual contract prices on Hyperliquid.' }, { name: 'US Treasury', state: 'ok', note: '' }, { name: 'Sector performance', state: 'off', note: 'Not connected: no source with display rights is configured for sector moves.' }];
+  const pq = (symbol, price, changePct, volumeUsd) => ({ symbol, name: symbol + ' Example Corp', price, changePct, volume: null, volumeUsd, kind: 'perp' });
+  stubs.set('overview', () => ({ body: { demo: false, at: Date.now(), sources: HLS, sectors: [], macro: [], yields: overview.yields,
+    indexes: [{ symbol: 'HL:XYZ100', name: 'XYZ100 perpetual on Hyperliquid', price: 25500, changePct: 2, spark: [1, 2, 3], asOf: Date.now(), delayed: false, kind: 'perp', changeBasis: '24h', source: 'Hyperliquid perpetual (xyz:XYZ100)' }],
+    movers: { gainers: [pq('NVDA', 190, 3.1, 5e7), pq('TSLA', 420, 1.2, 7e7)], losers: [pq('AMD', 150, -2.5, 2e7)], active: [pq('TSLA', 420, 1.2, 7e7), pq('NVDA', 190, 3.1, 5e7)], universe: 'The 3 US shares that have a perpetual contract on Hyperliquid, by that contract’s 24-hour change. Not the whole market.' } } }));
+  stubs.set('quote', (u) => ({ body: { demo: false, at: Date.now(), sources: [HLS[0]], quotes: u.searchParams.get('symbols').split(',').map((s) => ({ symbol: s, name: null, price: 190, changePct: -4, previousClose: null, open: null, high: null, low: null, volume: null, volumeUsd: 9e6, marketCap: null, asOf: Date.now(), delayed: false, kind: 'perp', changeBasis: '24h', source: 'Hyperliquid perpetual (xyz:' + s + ')' })) } }));
+  stubs.set('candles', (u) => ({ body: { demo: false, at: Date.now(), sources: [HLS[0]], symbol: u.searchParams.get('symbol'), interval: '1d', delayed: false, kind: 'perp', source: 'Hyperliquid perpetual (xyz:NVDA)', range: u.searchParams.get('range'), historyStart: '2026-02-02', capped: false,
+    candles: [{ time: Date.UTC(2026, 1, 2) / 1000, open: 10, high: 12, low: 9, close: 11, volume: 5 }, { time: Date.UTC(2026, 1, 3) / 1000, open: 11, high: 13, low: 10, close: 12, volume: 6 }] } }));
+  stubs.set('company', () => ({ body: { demo: false, at: Date.now(), symbol: 'NVDA', name: null, cik: null, exchange: null, industry: null, fiscalYearEnd: null, facts: [], statements: null, filings: [], sources: [{ name: 'SEC EDGAR', state: 'off', note: 'Set SEC_USER_AGENT.' }] } }));
+  await p.evaluate(() => localStorage.setItem('nt.watch', '["NVDA"]'));
+  await p.goto(BASE + '/#stocks', { waitUntil: 'domcontentloaded' });
+  await p.reload({ waitUntil: 'domcontentloaded' });
+  await waitText('#tfIdx', /XYZ100 perpetual/);
+  await waitText('#tfWat', /190\.00/);
+  const idx = await text('#tfIdx'), mov = await text('#tfMov'), map = await text('#tfMap'), wat = await text('#tfWat');
+  check('index tile from a perpetual says so, and is not called an index level', /Perpetual contract price, not the index level/.test(idx) && /not the stock exchange’s price/.test(idx) && /change over 24 hours/.test(idx) && !/Latest ·/.test(idx), idx.slice(0, 200));
+  check('movers from perpetuals: every row and both columns say so, with dollars traded in place of share volume', await p.$$eval('#tfMov tbody tr', (n) => n.length === 5 && n.every((r) => /· perpetual/.test(r.textContent) && /\$\d/.test(r.lastElementChild.textContent))) && /Change, 24h/.test(mov) && /Traded, 24h/.test(mov) && /Not the whole market/.test(mov) && /not the stock exchange’s price/.test(mov), mov.slice(0, 160));
+  check('market map from perpetuals says what it is shaded and sized by', /24-hour change of each company’s perpetual contract on Hyperliquid \(not its exchange price\)/.test(map) && /value traded in the perpetual contract/.test(map) && await p.$$eval('.tfMapTile', (n) => n.length === 3 && n.every((b) => /Perpetual contract on Hyperliquid/.test(b.getAttribute('aria-label')))), map.slice(-260));
+  check('watchlist rows priced from a perpetual say so', /perpetual price, 24h change/.test(wat) && /not the stock exchange’s price/.test(wat), wat.slice(0, 200));
+  check('a block with no source of its own is credited to nobody', !/Source:/.test(await text('#tfSec .tfNote')) && /Sector moves are not connected on this server \(Sector performance/.test(await text('#tfSec')) && /Source: Hyperliquid perpetuals ·/.test(await text('#tfIdx .tfNote')) && /Source: US Treasury ·/.test(await text('#tfYld .tfNote')), (await text('#tfSec .tfNote')) + ' | ' + (await text('#tfIdx .tfNote')));
+  await shot('perp-overview-1440');
+  await open('#stocks/NVDA');
+  await waitText('#tfQuote', /Perpetual contract price/);
+  await waitText('#tfChartSum', /daily candles/);
+  const qt = await text('#tfQuote'), ch = await text('#tfChartC');
+  check('company price from a perpetual: labelled, sourced, and without exchange-only figures', /Perpetual contract price/.test(qt) && /Hyperliquid perpetual \(xyz:NVDA\)/.test(qt) && /change over 24 hours/.test(qt) && /not the stock exchange’s price/.test(qt) && !/Market value|Previous close|Day range/.test(qt) && /Exchange price\s*Not connected/.test(qt), qt.slice(0, 300));
+  check('chart of a perpetual: the heading, the note, the summary and the description all say so', /Price chart: perpetual contract, not the exchange price/.test(ch) && /Perpetual contract ·/.test(await text('#tfChartC .tfNote')) && /^Perpetual contract prices from Hyperliquid, not stock exchange prices\./.test(await text('#tfChartSum')) && /Perpetual contract prices from Hyperliquid/.test(await p.$eval('#tfChart', (n) => n.getAttribute('aria-label'))));
+  check('with the SEC off, facts, statements and filings each say they are not connected', /Key facts are not connected/.test(await text('#tfFacts')) && /Financial statements are not connected/.test(await text('#tfStmt')) && /Filings are not connected/.test(await text('#tfFil')));
+  await shot('perp-company-1440');
+  ['overview', 'quote', 'candles', 'company'].forEach((n) => stubs.delete(n));
+  await p.evaluate(() => localStorage.removeItem('nt.watch'));
+}
+
+// ----- review: "a year earlier" is found by date, not by counting columns -----
+{
+  const row = (key, label, values) => ({ key, label, unit: 'USD', values });
+  const S = (periods, periodEnds, values) => ({ periods, periodEnds, income: [row('revenue', 'Revenue', values)], balance: [], cashflow: [] });
+  stubs.set('company', () => wrap({ symbol: co.symbol, name: 'Gap Test Co', cik: '1', exchange: 'X', industry: 'Y', fiscalYearEnd: '01-31', facts: [], filings: [],
+    statements: {
+      // The year-end moved from September to December: FY2023 and FY2022 end fifteen months apart.
+      annual: S(['FY2024', 'FY2023', 'FY2022'], ['2024-12-31', '2023-12-31', '2022-09-30'], [380e6, 345e6, 300e6]),
+      // Two quarters are missing, so four columns back is not the same quarter a year before.
+      quarterly: S(['Q1 FY2025', 'Q4 FY2024', 'Q1 FY2024', 'Q4 FY2023', 'Q3 FY2023'], ['2025-05-03', '2025-02-01', '2024-05-04', '2024-02-03', '2023-10-28'], [27e6, null, 25e6, 20e6, 18e6])
+    } }));
+  await open('#stocks/' + co.symbol);
+  await p.waitForSelector('#tfStmtTable');
+  const head = () => p.$$eval('#tfStmtTable thead th', (n) => n.map((x) => x.textContent));
+  const cells = () => p.$$eval('#tfr-revenue td', (n) => n.map((x) => x.textContent));
+  check('annual columns print the day each fiscal year ends', (await head()).slice(2).join('|') === 'FY2024, ending 31 Dec 2024|Change from a year earliervs FY2023|FY2023, ending 31 Dec 2023|FY2022, ending 30 Sep 2022', (await head()).join('|'));
+  check('annual change is against the year ending twelve months before', (await cells())[2] === '▲ +10.1%', (await cells()).join('|'));
+  await p.click('[data-fk="per-quarterly"]');
+  await waitText('#tfStmtTable caption', /by fiscal quarter/);
+  check('quarterly change skips the gap: Q1 against last year’s Q1 (+8.0%), not four columns back (+50.0%)', (await cells())[2] === '▲ +8.0%' && /vs Q1 FY2024/.test((await head())[3]) && /\(Q1 FY2024\)/.test(await text('#tfStmt .tfFoot')), (await cells()).join('|') + ' ' + (await head())[3]);
+  check('quarter columns print their end dates, so a January year-end is plain', /Q1 FY2025, ending 3 May 2025/.test((await head())[2]));
+  stubs.set('company', () => wrap({ symbol: co.symbol, name: 'Gap Test Co', cik: '1', exchange: 'X', industry: 'Y', fiscalYearEnd: '12-31', facts: [], filings: [],
+    statements: { annual: S(['FY2024', 'FY2022'], ['2024-12-31', '2022-09-30'], [380e6, 300e6]), quarterly: S([], [], []) } }));
+  await p.click('[data-fk="per-annual"]');
+  await open('#stocks'); await open('#stocks/' + co.symbol);
+  await waitText('#tfStmt .tfFoot', /not among the periods shown/);
+  check('with no period a year earlier there is no change figure (not a 27-month comparison)', (await cells())[2] === '–' && /not among the periods shown/.test(await text('#tfStmt .tfFoot')), (await cells()).join('|'));
+  stubs.delete('company');
+}
+
+// ----- review: event times across daylight-saving changes, in two viewer zones -----
+{
+  const ev = (date, time, title) => ({ date, time, kind: 'economic', title, symbol: null, detail: null, importance: 2, source: 'Test', url: null });
+  // US clocks go back on 1 November 2026; UK clocks went back a week earlier, on 25 October.
+  stubs.set('calendar', () => wrap({ timezone: 'America/New_York', events: [
+    ev('2026-10-22', '08:30', 'A both on summer time'), ev('2026-10-29', '08:30', 'B only New York on summer time'), ev('2026-11-05', '08:30', 'C both on winter time'),
+    ev('2026-10-22', '20:30', 'D evening in New York'), ev('2026-11-01', null, 'E all day on the changeover'), ev('2026-03-08', '08:30', 'F the morning US clocks go forward'), ev('2026-03-08', null, 'G all day in March')] }));
+  stubs.set('ipos', () => wrap({ pipeline: [] }));
+  const agenda = () => p.$$eval('.tfDay', (days) => Object.fromEntries(days.flatMap((d) => [...d.querySelectorAll('.tfEvent')].map((e) => [e.querySelector('.tfEvTitle').textContent.charAt(0), d.querySelector('h3').id.slice(6) + ' ' + e.querySelector('.tfTime').textContent.replace(' no time given', '')]))));
+  await p.emulateTimezone('Europe/London');
+  await open('#calendar');
+  await waitText('#tfAgenda', /C both on winter time/);
+  let a = await agenda();
+  check('London: 08:30 New York is 13:30, then 12:30 in the week only New York is on summer time, then 13:30', a.A === '2026-10-22 13:30' && a.B === '2026-10-29 12:30' && a.C === '2026-11-05 13:30' && a.F === '2026-03-08 12:30', JSON.stringify(a));
+  check('London: an evening event in New York is filed under the next day', a.D === '2026-10-23 01:30', a.D);
+  check('London: all-day events stay on their date', a.E === '2026-11-01 –' && a.G === '2026-03-08 –', a.E + ' | ' + a.G);
+  for (const [zone, wantA, wantD] of [['Pacific/Auckland', '2026-10-23 01:30', '2026-10-23 13:30'], ['America/Los_Angeles', '2026-10-22 05:30', '2026-10-22 17:30']]) {
+    await p.emulateTimezone(zone);
+    await open('#home'); await open('#calendar');
+    await p.reload({ waitUntil: 'domcontentloaded' });
+    await waitText('#tfAgenda', /C both on winter time/);
+    a = await agenda();
+    check(zone + ': timed events move to the viewer’s clock and date; all-day events do not shift a day', a.A === wantA && a.D === wantD && a.E === '2026-11-01 –' && a.G === '2026-03-08 –', JSON.stringify(a));
+  }
+  await p.emulateTimezone(null);
+  stubs.delete('calendar'); stubs.delete('ipos');
+}
+
+// ----- review: a filing whose details have not been read is not shown as "Indefinite" -----
+{
+  const r = (issuer, detail, amountOffered, amountSold) => ({ issuer, industry: detail ? 'Other Technology' : null, state: detail ? 'CA' : null, filedAt: '2026-11-18', amountOffered, amountSold, firstSale: null, form: 'D', url: null, detail });
+  let n = 0;
+  stubs.set('private', () => { n += 1; return { body: { demo: false, at: Date.now(), sources: [{ name: 'SEC EDGAR', state: 'ok', note: '' }], detailsPending: n < 2 ? 1 : 0, raises: [r('Unread Example LLC', n >= 2, n >= 2 ? 2e6 : null, n >= 2 ? 1e6 : null), r('Open Ended Example LP', true, null, 5e6), r('Big Example Inc', true, 999960000, 999400)] } }; });
+  stubs.set('ipos', () => wrap({ pipeline: [] }));
+  await open('#private');
+  await p.waitForSelector('#tfRaises tbody tr');
+  const cellsOf = (name) => p.$$eval('#tfRaises tbody tr', (rows, nm) => [...rows.find((x) => x.textContent.includes(nm)).querySelectorAll('td')].map((c) => c.textContent), name);
+  const first = await cellsOf('Unread Example');
+  check('unread filing: amounts say "Not read", never "Indefinite" or $0', first[2] === 'Not read' && first[3] === 'Not read' && (await cellsOf('Open Ended'))[2] === 'Indefinite', first.join('|'));
+  check('the totals leave the unread filing out and say why', /\$1\.00B offered, \$6\.0M sold/.test(await text('#tfPvSum')) && /1 filing is listed without amounts while the details are read from the SEC/.test(await text('#tfPvSum')), await text('#tfPvSum'));
+  check('the page looks again by itself and fills the amounts in', await waitText('#tfPvSum', /\$1\.00B offered, \$7\.0M sold/, 9000) && (await cellsOf('Unread Example'))[2] === '$2.0M', await text('#tfPvSum'));
+  const big = await cellsOf('Big Example');
+  check('amounts round into the next unit cleanly: $1.00B, not $1,000.0M', big[2] === '$1.00B' && big[3] === '$999K', big.join('|'));
+  stubs.delete('private'); stubs.delete('ipos');
+  await open('#stocks');
+  await p.waitForSelector('#tfMac .tfTile');
+  check('rates keep a decimal: 4.0% beside 4.25%', /Central bank policy rate\s*4\.0%/.test(await text('#tfMac')) && /Previous: 4\.25%/.test(await text('#tfMac')), (await text('#tfMac')).slice(0, 200));
+  check('the watchlist card has no dead space above its message', await p.$eval('#tfWat .tfSearch', (n) => n.getBoundingClientRect().height < 80));
 }
 
 check('no script errors', errs.length === 0, errs.slice(0, 4).join(' || '));

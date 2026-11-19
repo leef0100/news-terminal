@@ -28,7 +28,10 @@ const NEAR = 5 * DAY; // how far apart two start dates may be and still mean the
 
 // Row -> tags, most preferred first. `unit` is the XBRL unit the values are filed in.
 export const CONCEPTS = {
-  revenue: ['RevenueFromContractWithCustomerExcludingAssessedTax', 'Revenues', 'SalesRevenueNet', 'RevenueFromContractWithCustomerIncludingAssessedTax', 'SalesRevenueGoodsNet', 'RevenuesNetOfInterestExpense'],
+  // `Revenues` is the total. A company with income outside customer contracts (leases,
+  // interest, insurance premiums) reports it beside the narrower contract-revenue tags, so
+  // the total is taken first wherever it exists; taking the part would understate revenue.
+  revenue: ['Revenues', 'RevenueFromContractWithCustomerExcludingAssessedTax', 'RevenueFromContractWithCustomerIncludingAssessedTax', 'SalesRevenueNet', 'SalesRevenueGoodsNet', 'RevenuesNetOfInterestExpense'],
   costOfRevenue: ['CostOfRevenue', 'CostOfGoodsAndServicesSold', 'CostOfGoodsSold', 'CostOfServices'],
   grossProfit: ['GrossProfit'],
   operatingExpenses: ['OperatingExpenses'],
@@ -149,7 +152,15 @@ export function buildStatements(companyFacts, { maxAnnual = 5, maxQuarterly = 8 
     if (years.length && ms(years[years.length - 1].end) - ms(s.end) < 300 * DAY) continue;
     years.push({ start: s.start, end: s.end, firstFy: s.firstFy });
   }
-  if (!years.length) return { annual: null, quarterly: null, reason: 'No annual report with structured financial data has been filed yet.' };
+  if (!years.length) {
+    // A company that keeps its books in another currency files the same tags under that
+    // currency's unit. Its figures are not converted or relabelled as dollars here.
+    const other = new Set();
+    for (const row of ['revenue', 'netIncome', 'totalAssets']) for (const tag of CONCEPTS[row]) for (const unit of Object.keys(gaap[tag]?.units || {})) if (unit !== 'USD' && /^[A-Z]{3}$/.test(unit)) other.add(unit);
+    const hasUsd = ['revenue', 'netIncome', 'totalAssets'].some((row) => CONCEPTS[row].some((tag) => (gaap[tag]?.units?.USD || []).length));
+    if (other.size && !hasUsd) return { annual: null, quarterly: null, reason: `Statements are not shown: the company reports in ${[...other].sort().join(', ')}, not US dollars, and figures are not converted here.` };
+    return { annual: null, quarterly: null, reason: 'No annual report with structured financial data has been filed yet.' };
+  }
   // The newest year is named by the report that first carried it; older ones count back.
   const newestFy = Number.isInteger(years[0].firstFy) ? years[0].firstFy : Number(years[0].end.slice(0, 4));
   for (const y of years) y.fy = newestFy - Math.round((ms(years[0].end) - ms(y.end)) / (365.25 * DAY));
@@ -163,6 +174,14 @@ export function buildStatements(companyFacts, { maxAnnual = 5, maxQuarterly = 8 
   for (const y of grid) {
     const mine = all.filter((s) => Math.abs(s.start - y.start) <= NEAR);
     y.q = BUCKET.map(([lo, hi]) => best(mine.filter((s) => s.days >= lo && s.days <= hi))?.end || null);
+    // A company that reports each quarter only on its own has no six- or nine-month span to
+    // read the end of the second and third quarters from: they are then where a quarter-long
+    // span starting the day after the quarter before stops.
+    for (let j = 1; j < 3; j++) {
+      if (y.q[j] || !y.q[j - 1]) continue;
+      const from = ms(y.q[j - 1]) + DAY;
+      y.q[j] = best(all.filter((s) => Math.abs(s.start - from) <= NEAR && s.days >= 80 && s.days <= 100 && (!y.end || s.end < y.end)))?.end || null;
+    }
     y.q.push(y.end);
   }
 
@@ -175,7 +194,11 @@ export function buildStatements(companyFacts, { maxAnnual = 5, maxQuarterly = 8 
     const startOf = (j) => (j === 1 ? y.start : y.q[j - 2] ? ms(y.q[j - 2]) + DAY : null);
     const cum = (j) => (y.q[j - 1] ? span(tag, unit, y.start, y.q[j - 1], ...(j === 4 ? [350, 380] : BUCKET[j - 1])) : null);
     const st = startOf(k);
-    const direct = st === null ? null : span(tag, unit, st, end, 80, 100);
+    // Reported on its own: a quarter-long span ending on the quarter's last day. When the end
+    // of the quarter before is not known, any such span that starts well inside the year is
+    // still this quarter and no other.
+    const direct = st !== null ? span(tag, unit, st, end, 80, 100)
+      : (series(tag, unit).get(end) || []).find((f) => f.start !== null && f.days >= 80 && f.days <= 100 && f.start > y.start + 60 * DAY) || null;
     if (direct) return { val: direct.val, derived: false };
     if (!additive || k === 1) return null;
     const a = cum(k), b = cum(k - 1);
@@ -187,13 +210,29 @@ export function buildStatements(companyFacts, { maxAnnual = 5, maxQuarterly = 8 
     }
     return null;
   }
-  const firstTag = (tags, fn) => { for (const tag of tags) { const v = fn(tag); if (v) return v; } return null; };
+  const firstTag = (tags, fn) => { for (let i = 0; i < tags.length; i++) { const v = fn(tags[i], i); if (v) return v; } return null; };
+  // Two tags in one row's list are not always the same measure: a company can report total
+  // revenue under one and the customer-contract part under another, the total only once a
+  // year. A quarter under a second-choice tag is used only if that tag's figure for the year
+  // agrees with the first-choice tag's (or it has none, as when a company changes tag
+  // part-way through a year). Otherwise the quarter is left empty, not filled with a
+  // narrower number under the same label.
+  function sameMeasure(tags, i, unit, y) {
+    const ref = y.end ? y : years[0];
+    for (let j = 0; j < i; j++) {
+      const chosen = span(tags[j], unit, ref.start, ref.end, 350, 380);
+      if (!chosen) continue;
+      const mine = span(tags[i], unit, ref.start, ref.end, 350, 380);
+      return !mine || Math.abs(mine.val - chosen.val) <= 0.005 * Math.abs(chosen.val);
+    }
+    return true;
+  }
 
   function valueAt(tags, unit, period, isInstant, additive) {
     if (!period.end) return null;
     if (isInstant) { const f = firstTag(tags, (tag) => instant(tag, unit, period.end)); return f ? { val: f.val, derived: false } : null; }
     if (period.k === 0) { const f = firstTag(tags, (tag) => span(tag, unit, period.y.start, period.end, 350, 380)); return f ? { val: f.val, derived: false } : null; }
-    return firstTag(tags, (tag) => quarterFlow(tag, unit, period.y, period.k, additive));
+    return firstTag(tags, (tag, i) => { const v = quarterFlow(tag, unit, period.y, period.k, additive); return v && sameMeasure(tags, i, unit, period.y) ? v : null; });
   }
 
   function table(periods) {
