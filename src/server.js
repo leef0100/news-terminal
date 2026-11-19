@@ -318,7 +318,8 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
     app.get('/api/markets/funding', market(300, async (coin) => ({ coin, history: await hl.fundingHistory(coin) })));
     app.get('/api/markets/candles', market(10, async (coin, req) => {
       const interval = Object.hasOwn(INTERVALS, String(req.query.interval)) ? String(req.query.interval) : '15m';
-      return { interval, candles: await hl.candles(coin, interval) };
+      // Two sizes only, so everyone shares the same cached answers.
+      return { interval, candles: await hl.candles(coin, interval, String(req.query.bars) === '600' ? 600 : 300) };
     }));
 
     // Breaking-page chat. `room` is "general" or a feed item id.

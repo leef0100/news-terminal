@@ -35,12 +35,13 @@ window.Indicators = (function () {
       if (d >= 0) gain += d; else loss -= d;
     }
     gain /= period; loss /= period;
-    out[period] = loss === 0 ? 100 : 100 - 100 / (1 + gain / loss);
+    var at = function (g, l) { return g === 0 && l === 0 ? 50 : l === 0 ? 100 : 100 - 100 / (1 + g / l); };
+    out[period] = at(gain, loss);
     for (var j = period + 1; j < closes.length; j++) {
       var ch = closes[j] - closes[j - 1];
       gain = (gain * (period - 1) + (ch > 0 ? ch : 0)) / period;
       loss = (loss * (period - 1) + (ch < 0 ? -ch : 0)) / period;
-      out[j] = loss === 0 ? 100 : 100 - 100 / (1 + gain / loss);
+      out[j] = at(gain, loss);
     }
     return out;
   }
@@ -138,11 +139,17 @@ window.Indicators = (function () {
     if (!(hi > lo)) return null;
     var step = (hi - lo) / binCount, bins = [];
     for (var i = 0; i < binCount; i++) bins.push({ lo: lo + i * step, hi: lo + (i + 1) * step, mid: lo + (i + 0.5) * step, vol: 0 });
+    var clamp = function (k) { return Math.max(0, Math.min(binCount - 1, k)); };
     candles.forEach(function (c) {
-      var a = Math.max(0, Math.min(binCount - 1, Math.floor((c.low - lo) / step)));
-      var b = Math.max(0, Math.min(binCount - 1, Math.floor((c.high - lo) / step)));
-      var share = c.volume / (b - a + 1);
-      for (var k = a; k <= b; k++) bins[k].vol += share;
+      var range = c.high - c.low;
+      // A candle that did not move traded at one price.
+      if (!(range > 0)) { bins[clamp(Math.floor((c.close - lo) / step))].vol += c.volume; return; }
+      var a = clamp(Math.floor((c.low - lo) / step)), b = clamp(Math.floor((c.high - lo) / step));
+      // Each price step gets the part of the candle's range that actually falls inside it.
+      for (var k = a; k <= b; k++) {
+        var part = Math.min(c.high, bins[k].hi) - Math.max(c.low, bins[k].lo);
+        if (part > 0) bins[k].vol += c.volume * part / range;
+      }
     });
     var total = 0, pocI = 0;
     bins.forEach(function (bn, idx) { total += bn.vol; if (bn.vol > bins[pocI].vol) pocI = idx; });
@@ -176,8 +183,8 @@ window.Indicators = (function () {
   // and marks where those positions would be closed out: longs below, shorts above.
   // It shows where forced selling or buying could cluster IF that assumption holds.
   var LEVERAGES = [{ x: 100, w: 0.1 }, { x: 50, w: 0.2 }, { x: 25, w: 0.3 }, { x: 10, w: 0.4 }];
-  function liquidationModel(profile, price, binCount) {
-    if (!profile || !finite(price)) return null;
+  function liquidationModel(profile, price, binCount, candles) {
+    if ((!profile && !candles) || !finite(price)) return null;
     binCount = binCount || 60;
     var lo = price * 0.85, hi = price * 1.15, step = (hi - lo) / binCount, bins = [];
     for (var i = 0; i < binCount; i++) bins.push({ lo: lo + i * step, hi: lo + (i + 1) * step, mid: lo + (i + 0.5) * step, long: 0, short: 0 });
@@ -185,7 +192,21 @@ window.Indicators = (function () {
       var idx = Math.floor((p - lo) / step);
       if (idx >= 0 && idx < binCount) bins[idx][field] += w;
     };
-    profile.bins.forEach(function (b) {
+    if (candles && candles.length) {
+      // Walk the candles in time order. A position assumed opened in one candle is gone
+      // if any later candle already traded through the price where it would be closed out.
+      var n = candles.length, minAfter = new Array(n), maxAfter = new Array(n), mn = Infinity, mx = -Infinity;
+      for (var q = n - 1; q >= 0; q--) { minAfter[q] = mn; maxAfter[q] = mx; mn = Math.min(mn, candles[q].low); mx = Math.max(mx, candles[q].high); }
+      candles.forEach(function (c, idx) {
+        if (!(c.volume > 0)) return;
+        var entry = (c.high + c.low + c.close) / 3;
+        LEVERAGES.forEach(function (L) {
+          var below = entry * (1 - 1 / L.x), above = entry * (1 + 1 / L.x);
+          if (below < price && minAfter[idx] > below) put(below, 'long', c.volume * L.w);
+          if (above > price && maxAfter[idx] < above) put(above, 'short', c.volume * L.w);
+        });
+      });
+    } else profile.bins.forEach(function (b) {
       if (!b.vol) return;
       LEVERAGES.forEach(function (L) {
         var below = b.mid * (1 - 1 / L.x), above = b.mid * (1 + 1 / L.x);
@@ -204,19 +225,28 @@ window.Indicators = (function () {
     if (!candles || candles.length < 30) return null;
     var closes = candles.map(function (c) { return c.close; });
     var e9 = last(ema(closes, 9)), e21 = last(ema(closes, 21)), e50 = last(ema(closes, 50)), e200 = last(ema(closes, 200));
-    var vols = candles.slice(-21, -1).map(function (c) { return c.volume; });
+    // The twenty finished candles before the one being compared (it must not be in its own average).
+    var vols = candles.slice(-22, -2).map(function (c) { return c.volume; });
     var avgVol = vols.length ? vols.reduce(function (a, b) { return a + b; }, 0) / vols.length : 0;
     // The candle still forming has only part of its volume, so the last finished one is compared.
     var lastDone = candles.length > 1 ? candles[candles.length - 2] : last(candles);
     var close = last(closes);
-    var trend = 'flat';
+    var atr14 = last(atr(candles, 14));
+    // Unknown until there are 50 candles. Within a quarter of a typical candle's range of
+    // the average, price is "at" it, not above or below.
+    var trend = null;
     if (finite(e50)) {
-      if (close > e50 && (!finite(e200) || e50 > e200)) trend = 'up';
-      else if (close < e50 && (!finite(e200) || e50 < e200)) trend = 'down';
+      var band = finite(atr14) ? 0.25 * atr14 : 0;
+      trend = 'flat';
+      if (close > e50 + band && (!finite(e200) || e50 > e200)) trend = 'up';
+      else if (close < e50 - band && (!finite(e200) || e50 < e200)) trend = 'down';
     }
+    // How many candles the average-price line has had since it last restarted.
+    var key = anchorOf(interval), cur = key(last(candles).time), since = 0;
+    for (var b = candles.length - 1; b >= 0 && key(candles[b].time) === cur; b--) since += 1;
     return {
       interval: interval, close: close, ema9: e9, ema21: e21, ema50: e50, ema200: e200,
-      rsi: last(rsi(closes, 14)), atr: last(atr(candles, 14)), vwap: last(vwap(candles, interval)),
+      rsi: last(rsi(closes, 14)), atr: atr14, vwap: last(vwap(candles, interval)), vwapBars: since, bars: candles.length,
       volRatio: avgVol > 0 ? lastDone.volume / avgVol : null, trend: trend
     };
   }
@@ -226,16 +256,20 @@ window.Indicators = (function () {
     var price = input.price, out = [];
     var add = function (p, label, kind, note) { if (finite(p) && p > 0) out.push({ price: p, label: label, kind: kind, note: note || '' }); };
     var daily = input.daily || [];
-    if (daily.length >= 2) {
-      var prev = daily[daily.length - 2], today = daily[daily.length - 1];
+    // "Yesterday" and "today" are found by date (UTC), not by position: if the newest daily
+    // candle has not arrived yet, an older day must not be passed off as yesterday.
+    var day = 86400, todayStart = Math.floor((finite(input.now) ? input.now : (daily.length ? last(daily).time * 1000 : 0)) / 1000 / day) * day;
+    var today = daily.filter(function (c) { return c.time === todayStart; })[0];
+    var prev = daily.filter(function (c) { return c.time === todayStart - day; })[0];
+    if (today) add(today.open, 'Today open', 'prior');
+    if (prev) {
       add(prev.high, 'Yesterday high', 'prior');
       add(prev.low, 'Yesterday low', 'prior');
-      add(today.open, 'Today open', 'prior');
       var pv = pivots(prev);
       add(pv.P, 'Pivot', 'pivot'); add(pv.R1, 'R1', 'pivot'); add(pv.R2, 'R2', 'pivot'); add(pv.S1, 'S1', 'pivot'); add(pv.S2, 'S2', 'pivot');
     }
     if (input.profile) {
-      add(input.profile.poc, 'Most-traded price', 'profile', 'Point of control');
+      add(input.profile.poc, 'Most-traded price', 'profile', 'Point of control' + (input.profileSpan ? ', ' + input.profileSpan : ''));
       add(input.profile.vah, 'Value area high', 'profile');
       add(input.profile.val, 'Value area low', 'profile');
     }
@@ -263,7 +297,7 @@ window.Indicators = (function () {
       var name = { '1d': 'Daily', '4h': '4-hour', '1h': '1-hour' }[iv];
       add('trend-' + iv, name + ' trend', s.trend === 'up' ? 'up' : s.trend === 'down' ? 'down' : 'neutral',
         'Price is ' + fmt(pct(s.close, s.ema50)) + ' from its 50-period average' + (finite(s.ema200) ? ', which is ' + (s.ema50 > s.ema200 ? 'above' : 'below') + ' the 200' : ''),
-        'Price above a rising average means buyers have been in control on this timeframe; below means sellers have.');
+        'Price clearly above its 50-period average, with that average above the 200, means buyers have been in control on this timeframe. The mirror image means sellers have. Close to the average, or with the two averages disagreeing, it reads as neutral.');
     });
 
     var h = tf['1h'];
@@ -276,11 +310,12 @@ window.Indicators = (function () {
     if (h && finite(h.rsi)) {
       var r = h.rsi;
       add('rsi', 'Momentum (1h RSI)', r >= 70 || r <= 30 ? 'caution' : r > 55 ? 'up' : r < 45 ? 'down' : 'neutral',
-        'RSI ' + r.toFixed(0) + (r >= 70 ? ': stretched to the upside' : r <= 30 ? ': stretched to the downside' : ''),
+        'RSI ' + r.toFixed(1) + (r >= 70 ? ': stretched to the upside' : r <= 30 ? ': stretched to the downside' : ''),
         'RSI measures how one-sided recent moves have been, from 0 to 100. Above 55 buyers lead, below 45 sellers lead. Above 70 or below 30 the move is stretched and often pauses.');
     }
     var m = tf['15m'] || h;
-    if (m && finite(m.vwap)) {
+    // Just after the restart the line is one or two candles old and says nothing yet.
+    if (m && finite(m.vwap) && m.vwapBars >= 4) {
       var d = pct(price, m.vwap);
       add('vwap', 'Versus today\'s average price (VWAP)', Math.abs(d) < 0.1 ? 'neutral' : d > 0 ? 'up' : 'down',
         'Price is ' + fmt(d) + ' from VWAP',
@@ -299,9 +334,10 @@ window.Indicators = (function () {
     }
     if (finite(input.longPct)) {
       var lp = input.longPct;
+      lp = Math.round(lp);
       add('crowd', 'Positioning', lp >= 65 || lp <= 35 ? 'caution' : 'neutral',
-        Math.round(lp) + '% of accounts are long' + (lp >= 65 ? ': crowded long' : lp <= 35 ? ': crowded short' : ''),
-        'When most accounts sit on one side, there are few left to join and many who could be forced out. It is a warning about the crowd, not a timing signal.');
+        lp + '% of accounts are long' + (input.longFrom ? ' on ' + input.longFrom : '') + (lp >= 65 ? ': crowded long' : lp <= 35 ? ': crowded short' : ''),
+        'Counted on Binance and Bybit, where the figures are published; this chart\'s prices are from Hyperliquid. When most accounts sit on one side, there are few left to join and many who could be forced out. It is a warning about the crowd, not a timing signal.');
     }
     var levels = input.levels || [];
     var above = levels.filter(function (l) { return l.side === 'above'; }).sort(function (a, b) { return a.price - b.price; })[0];
@@ -319,32 +355,42 @@ window.Indicators = (function () {
       if (x.lean === 'up') up += 1; else if (x.lean === 'down') down += 1; else if (x.lean === 'caution') caution += 1;
       if (x.lean === 'up' || x.lean === 'down') read += 1;
     });
-    var verdict = 'mixed', text = 'The readings disagree';
-    if (f.length < 3) { verdict = 'unknown'; text = 'Not enough data yet'; }
-    else if (up >= 3 && up >= down * 2) { verdict = 'up'; text = 'Most readings lean up'; }
-    else if (down >= 3 && down >= up * 2) { verdict = 'down'; text = 'Most readings lean down'; }
-    return { factors: f, up: up, down: down, caution: caution, directional: read, verdict: verdict, text: text };
+    // Only six readings can point up or down (three trends, the order of the averages,
+    // momentum, VWAP). A lean needs most of the ones available, at least four to judge
+    // from, and twice as many one way as the other. Cautions are reported beside it.
+    var able = f.filter(function (x) { return /^(trend-|stack$|rsi$|vwap$)/.test(x.id); }).length;
+    var withCare = caution ? ', with ' + caution + (caution === 1 ? ' caution' : ' cautions') : '';
+    var verdict = 'mixed', text = up || down ? 'The readings disagree' : 'No clear lean';
+    if (able < 4) { verdict = 'unknown'; text = 'Not enough history to judge'; }
+    else if (up > able / 2 && up >= down * 2) { verdict = 'up'; text = up + ' of ' + able + ' readings lean up' + withCare; }
+    else if (down > able / 2 && down >= up * 2) { verdict = 'down'; text = down + ' of ' + able + ' readings lean down' + withCare; }
+    return { factors: f, up: up, down: down, caution: caution, directional: read, able: able, verdict: verdict, text: text };
   }
 
   // How big a position can be for a chosen risk, and roughly where it would be liquidated.
-  // The liquidation price is an estimate: it ignores fees, funding and the exchange's
-  // exact maintenance rules (0.5% maintenance margin is assumed here).
+  // The liquidation price follows Hyperliquid's published rule for an isolated position:
+  // maintenance margin is half the initial margin at the market's highest leverage. It is
+  // still an estimate: fees, funding and cross-margin balances all move the real figure.
   function positionSize(a) {
-    var account = Number(a.account), riskPct = Number(a.riskPct), entry = Number(a.entry), stop = Number(a.stop), lev = Number(a.leverage) || 1;
-    if (!(account > 0) || !(riskPct > 0) || !(entry > 0) || !(stop > 0) || entry === stop) return null;
+    var account = Number(a.account), riskPct = Number(a.riskPct), entry = Number(a.entry), stop = Number(a.stop);
+    var maxLev = Number(a.maxLeverage) > 0 ? Number(a.maxLeverage) : 50;
+    var asked = a.leverage === '' || a.leverage == null ? 1 : Number(a.leverage);
+    if (!(account > 0) || !(riskPct > 0) || riskPct > 100 || !(entry > 0) || !(stop > 0) || entry === stop || !(asked >= 1)) return null;
+    var lev = Math.min(asked, maxLev);
     var long = stop < entry, perUnit = Math.abs(entry - stop), riskUsd = account * riskPct / 100;
     var qty = riskUsd / perUnit, notional = qty * entry, margin = notional / lev;
-    var mm = 0.005;
-    var liq = long ? entry * (1 - 1 / lev + mm) : entry * (1 + 1 / lev - mm);
-    // With no borrowing a long has nothing to be liquidated on; the formula's
-    // small leftover is an artefact of the maintenance margin, not a real price.
-    if (long && (lev <= 1 || liq <= 0)) liq = null;
+    var l = 1 / (2 * maxLev), side = long ? 1 : -1;
+    var liq = entry - side * (entry / lev - entry * l) / (1 - l * side);
+    // With no borrowing a long cannot be liquidated above zero.
+    if (!(liq > 0) || (long && lev <= 1)) liq = null;
     var stopBeyondLiq = liq != null && (long ? stop <= liq : stop >= liq);
     return {
-      side: long ? 'long' : 'short', riskUsd: riskUsd, qty: qty, notional: notional, margin: margin,
+      side: long ? 'long' : 'short', riskUsd: riskUsd, qty: qty, notional: notional, margin: margin, leverage: lev,
+      leverageCapped: asked > maxLev, maxLeverage: maxLev,
       marginPctOfAccount: margin / account * 100, stopPct: perUnit / entry * 100, liq: liq, stopBeyondLiq: stopBeyondLiq,
       tooBig: margin > account,
       targets: [1, 2, 3].map(function (r) { return { r: r, price: long ? entry + perUnit * r : entry - perUnit * r, gain: riskUsd * r }; })
+        .filter(function (t) { return t.price > 0; })
     };
   }
 

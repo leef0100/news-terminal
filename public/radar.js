@@ -67,7 +67,8 @@
     return p(d.getHours()) + ':' + p(d.getMinutes()) + ':' + p(d.getSeconds());
   }
   function signed(n, digits) { return (n > 0 ? '+' : '') + n.toFixed(digits) + '%'; }
-  function local(sec) { return sec - new Date(sec * 1000).getTimezoneOffset() * 60; }
+  // Chart times are real UTC seconds; labels are localised by HL.chartTime.
+  function local(sec) { return sec; }
   function market() { return st.markets.filter(function (m) { return m.coin === st.coin; })[0] || null; }
   function price() {
     var m = market(), list = st.c[st.interval];
@@ -151,12 +152,14 @@
   function ensureChart() {
     if (st.chart || !window.LightweightCharts) return;
     var LC = window.LightweightCharts;
+    var chartTime = window.HL.chartTime(function () { return st.interval; });
     st.chart = LC.createChart($('rChart'), {
       autoSize: true,
       layout: { background: { color: 'transparent' }, textColor: '#C2D4CA', fontFamily: 'Inter, system-ui, sans-serif' },
       grid: { vertLines: { color: 'rgba(50, 80, 64, .45)' }, horzLines: { color: 'rgba(50, 80, 64, .45)' } },
       rightPriceScale: { borderColor: '#325040' },
-      timeScale: { borderColor: '#325040', timeVisible: true, secondsVisible: false },
+      timeScale: { borderColor: '#325040', timeVisible: true, secondsVisible: false, tickMarkFormatter: chartTime.tickMarkFormatter },
+      localization: { timeFormatter: chartTime.timeFormatter },
       crosshair: { mode: 0 }
     });
     st.candles = st.chart.addCandlestickSeries({ upColor: '#6BE89A', borderUpColor: '#6BE89A', wickUpColor: '#6BE89A', downColor: '#F2876B', borderDownColor: '#F2876B', wickDownColor: '#F2876B' });
@@ -239,7 +242,7 @@
     if (!isFinite(bar.close)) return;
     var lastBar = list[list.length - 1];
     if (bar.time < lastBar.time) return;
-    if (bar.time === lastBar.time) list[list.length - 1] = bar; else { list.push(bar); if (list.length > 400) list.shift(); }
+    if (bar.time === lastBar.time) list[list.length - 1] = bar; else { list.push(bar); if (list.length > 700) list.shift(); }
     st.candles.update({ time: local(bar.time), open: bar.open, high: bar.high, low: bar.low, close: bar.close });
     st.volume.update(volBar(bar));
     st.tickPending = true;
@@ -338,13 +341,19 @@
     INTERVALS.forEach(function (v) { if (st.c[v]) tf[v] = I.summarize(st.c[v], v); });
     st.profile = I.volumeProfile(list, 48);
     st.walls = I.walls(st.depth);
-    st.levels = I.keyLevels({ price: p, daily: st.c['1d'], profile: st.profile, swingCandles: st.c['1h'] || list, walls: st.walls });
-    st.liq = I.liquidationModel(st.profile, p, 60);
+    // Levels and the confluence use the hourly candles whatever the chart shows, so they
+    // do not change when the chart's candle size does. The chart's own layer follows the chart.
+    var hourly = st.c['1h'] || list;
+    var days = Math.max(1, Math.round((hourly[hourly.length - 1].time - hourly[0].time) / 86400));
+    st.levels = I.keyLevels({ price: p, now: Date.now(), daily: st.c['1d'], profile: I.volumeProfile(hourly, 48), profileSpan: 'last ' + days + ' days', swingCandles: hourly, walls: st.walls });
+    st.liq = I.liquidationModel(st.profile, p, 60, list);
     var m = market(), snapCoin = st.snap ? st.snap.coins.filter(function (c) { return c.coin === st.coin; })[0] : null;
     st.conf = I.confluence({
       tf: tf, price: p, levels: st.levels,
       fundingAnnualPct: m ? m.fundingHourly * 24 * 365 * 100 : null,
-      longPct: snapCoin ? snapCoin.blendedLongPct : null
+      // Positioning older than three minutes is left out, not passed off as current.
+      longPct: snapCoin && Date.now() - st.snap.at < 180000 ? snapCoin.blendedLongPct : null,
+      longFrom: snapCoin && snapCoin.blendedFrom ? snapCoin.blendedFrom.join(' and ') : ''
     });
     st.tf = tf;
     $('radarState').hidden = true;
@@ -426,12 +435,12 @@
     INTERVALS.slice().reverse().forEach(function (v) {
       var s = st.tf[v], tr = el('tr');
       var th = el('th', null, v); th.scope = 'row'; tr.appendChild(th);
-      if (!s) { var td = el('td', 'muted', 'loading'); td.colSpan = 5; tr.appendChild(td); t.appendChild(tr); return; }
+      if (!s) { var td = el('td', 'muted', st.c[v] ? 'Not enough history yet' : 'loading'); td.colSpan = 5; tr.appendChild(td); t.appendChild(tr); return; }
       var cell = function (text, cls) { tr.appendChild(el('td', 'mono ' + (cls || ''), text)); };
-      cell({ up: '▲ Up', down: '▼ Down', flat: '– Flat' }[s.trend], s.trend === 'up' ? 'up' : s.trend === 'down' ? 'down' : '');
+      cell({ up: '▲ Up', down: '▼ Down', flat: '– Flat' }[s.trend] || 'n/a', s.trend === 'up' ? 'up' : s.trend === 'down' ? 'down' : '');
       var rel = function (ref) { if (ref == null || !isFinite(ref)) return cell('n/a'); var d = (s.close - ref) / ref * 100; cell(signed(d, 2), d >= 0 ? 'up' : 'down'); };
       rel(s.ema50); rel(s.ema200);
-      cell(s.rsi == null ? 'n/a' : s.rsi.toFixed(0), s.rsi >= 70 || s.rsi <= 30 ? 'warn' : s.rsi > 55 ? 'up' : s.rsi < 45 ? 'down' : '');
+      cell(s.rsi == null ? 'n/a' : s.rsi.toFixed(1), s.rsi == null ? '' : s.rsi >= 70 || s.rsi <= 30 ? 'warn' : s.rsi > 55 ? 'up' : s.rsi < 45 ? 'down' : '');
       rel(s.vwap);
       t.appendChild(tr);
     });
@@ -479,7 +488,7 @@
           // Capped so the light text keeps at least 4.5:1 contrast on the strongest cells.
           var a = Math.min(1, Math.abs(f.annualPct) / 40) * 0.24 + 0.06;
           td.style.background = f.annualPct >= 0 ? 'rgba(107, 232, 154, ' + a.toFixed(2) + ')' : 'rgba(242, 135, 107, ' + a.toFixed(2) + ')';
-          td.title = (f.rate8h * 100).toFixed(4) + '% per 8 hours';
+          td.title = (f.rate8h * 100).toFixed(4) + '% per 8 hours' + (f.intervalHours && f.intervalHours !== 8 ? ' (paid every ' + f.intervalHours + (f.intervalHours === 1 ? ' hour)' : ' hours)') : '');
         }
         tr.appendChild(td);
       });
@@ -544,6 +553,7 @@
       card.appendChild(head);
       if (c.blendedLongPct != null) card.appendChild(splitBar(c.blendedLongPct, true));
       card.appendChild(el('p', 'note', c.note));
+      if (c.blendedFrom && c.blendedFrom.length === 1) card.appendChild(el('p', 'muted small', 'From ' + c.blendedFrom[0] + ' alone: the other venue did not answer.'));
       if (c.positioning.length) {
         var rows = el('div', 'venueRows');
         c.positioning.forEach(function (p) {
@@ -558,7 +568,7 @@
         card.appendChild(rows);
       }
       var foot = el('div', 'coinFoot');
-      [['Open interest', c.openInterestUsd ? money(c.openInterestUsd) : 'n/a'], ['Coinbase premium', c.coinbasePremiumPct == null ? 'n/a' : signed(c.coinbasePremiumPct, 3)]].forEach(function (x) {
+      [['Open interest' + (c.openInterestFrom && c.openInterestFrom.length ? ', ' + c.openInterestFrom.length + (c.openInterestFrom.length === 1 ? ' venue' : ' venues') : ''), c.openInterestUsd ? money(c.openInterestUsd) : 'n/a'], ['Coinbase spot vs ' + (c.coinbasePremiumVs || 'futures'), c.coinbasePremiumPct == null ? 'n/a' : signed(c.coinbasePremiumPct, 3)]].forEach(function (x) {
         var s = el('span');
         s.appendChild(el('i', null, x[0]));
         s.appendChild(el('b', null, x[1]));
@@ -584,22 +594,32 @@
   }
 
   // ---------- position size ----------
+  // Exact dollars: a rounded "$1k" for $1,499 is not good enough for a risk figure.
+  function usd(n) { return '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+  function amount(n) { return n >= 1 ? n.toLocaleString('en-US', { maximumFractionDigits: 3 }) : n.toLocaleString('en-US', { maximumSignificantDigits: 3, maximumFractionDigits: 12 }); }
   function renderSize() {
     var out = $('psOut');
     out.textContent = '';
-    var r = I.positionSize({ account: $('psAccount').value, riskPct: $('psRisk').value, entry: $('psEntry').value, stop: $('psStop').value, leverage: $('psLev').value });
-    if (!r) { out.appendChild(el('p', 'muted small', 'Enter an entry and a stop to see the size.')); return; }
+    var m = market();
+    var r = I.positionSize({ account: $('psAccount').value, riskPct: $('psRisk').value, entry: $('psEntry').value, stop: $('psStop').value, leverage: $('psLev').value, maxLeverage: m && m.maxLeverage });
+    if (!r) {
+      var need = !$('psEntry').value || !$('psStop').value ? 'Enter an entry and a stop to see the size.'
+        : 'Check the numbers: the entry and stop must differ, risk is between 0 and 100%, and leverage is 1 or more.';
+      out.appendChild(el('p', 'muted small', need));
+      return;
+    }
     var line = function (k, v, cls) { var d = el('div', 'psLine ' + (cls || '')); d.appendChild(el('span', null, k)); d.appendChild(el('b', 'mono', v)); out.appendChild(d); };
     line('Direction', r.side === 'long' ? 'Long (stop below entry)' : 'Short (stop above entry)');
-    line('You risk', money(r.riskUsd) + ' if the stop is hit');
-    line('Position size', (r.qty >= 1 ? r.qty.toFixed(3) : r.qty.toPrecision(3)) + ' ' + st.coin + ' ($' + Math.round(r.notional).toLocaleString('en-US') + ')');
-    line('Margin needed', money(r.margin) + ' (' + r.marginPctOfAccount.toFixed(0) + '% of account)', r.tooBig ? 'bad' : '');
+    line('You risk', usd(r.riskUsd) + ' if the stop is hit');
+    line('Position size', amount(r.qty) + ' ' + st.coin + ' (' + usd(r.notional) + ')');
+    line('Margin needed', usd(r.margin) + ' (' + r.marginPctOfAccount.toFixed(r.marginPctOfAccount < 10 ? 1 : 0) + '% of account)', r.tooBig ? 'bad' : '');
     line('Stop distance', r.stopPct.toFixed(2) + '%');
-    line('Liquidation, roughly', r.liq == null ? 'none at 1x' : '$' + px(r.liq), r.stopBeyondLiq ? 'bad' : '');
-    r.targets.forEach(function (t) { line(t.r + 'x the risk', '$' + px(t.price) + ' (+' + money(t.gain) + ')'); });
-    if (r.stopBeyondLiq) out.appendChild(el('p', 'psWarn', 'At this leverage the position would be liquidated before price reaches your stop. Lower the leverage or tighten the stop.'));
-    if (r.tooBig) out.appendChild(el('p', 'psWarn', 'This needs more margin than the account holds. Raise the leverage, widen the risk, or move the stop further away.'));
-    out.appendChild(el('p', 'muted small', 'The liquidation price is an estimate (0.5% maintenance margin, no fees or funding). The exchange\'s own figure is the one that counts.'));
+    line('Liquidation, roughly', r.liq == null ? 'none without leverage' : '$' + px(r.liq), r.stopBeyondLiq ? 'bad' : '');
+    r.targets.forEach(function (t) { line(t.r + 'x the risk', '$' + px(t.price) + ' (+' + usd(t.gain) + ')'); });
+    if (r.leverageCapped) out.appendChild(el('p', 'psWarn', st.coin + ' allows at most ' + r.maxLeverage + 'x on Hyperliquid, so ' + r.maxLeverage + 'x is used here.'));
+    if (r.stopBeyondLiq) out.appendChild(el('p', 'psWarn', 'At this leverage the position would be liquidated before price reaches your stop, so the loss would be larger than the risk above. A lower leverage moves liquidation further away.'));
+    if (r.tooBig) out.appendChild(el('p', 'psWarn', 'This position needs more margin than the account holds. A smaller risk percentage makes the position smaller. So does a wider stop.'));
+    out.appendChild(el('p', 'muted small', 'The liquidation price is an estimate for an isolated position on Hyperliquid' + (m && m.maxLeverage ? ' (' + st.coin + ' allows up to ' + m.maxLeverage + 'x)' : '') + ', before fees and funding. A stop is not guaranteed to fill at its price. The exchange\'s own figures are the ones that count.'));
   }
 
   // ---------- data ----------
@@ -607,7 +627,8 @@
 
   function loadCandles(interval) {
     var coin = st.coin, id = st.loadId;
-    return HL.candles(coin, interval).then(function (list) {
+    // 600 candles: enough history for the 200-period average to have settled.
+    return HL.candles(coin, interval, 600).then(function (list) {
       if (coin !== st.coin || id !== st.loadId || !list.length) return;
       // A live tick may already have moved the last candle on; keep the newer one.
       var have = st.c[interval];

@@ -423,3 +423,27 @@ test('hyperliquid adapter: grouped depth, funding history, and a cap on what thi
   await hl.fundingHistory('ETH');
   assert.equal(calls.length, before + 1, 'the allowance refills each minute');
 });
+
+test('radar: funding is compared on each market\'s own settlement interval, and a missing venue is named', async () => {
+  const { demoMarketFetch } = await import('../src/ingest/demo-markets.js');
+  const base = demoMarketFetch(() => 1_700_000_000_000);
+  const fetchImpl = async (url, init) => {
+    const u = String(url);
+    if (u.includes('/fapi/v1/fundingInfo')) return { ok: true, status: 200, json: async () => [{ symbol: 'HYPEUSDT', fundingIntervalHours: 4 }] };
+    if (u.includes('api.bybit.com')) return { ok: false, status: 403, json: async () => ({}) }; // what a US server gets
+    return base(url, init);
+  };
+  const hl = createHyperliquid({ fetchImpl, now: () => 1_700_000_000_000 });
+  const snap = await createRadar({ fetchImpl, hl, now: () => 1_700_000_000_000 }).snapshot();
+  const coin = (c) => snap.coins.find((x) => x.coin === c);
+  const bn = (c) => coin(c).funding.find((f) => f.venue === 'Binance');
+  assert.equal(bn('HYPE').intervalHours, 4);
+  assert.ok(Math.abs(bn('HYPE').rate8h - 0.00082) < 1e-12, 'a 4-hour rate counts twice in 8 hours');
+  assert.ok(Math.abs(bn('HYPE').annualPct - 0.00041 * 6 * 365 * 100) < 0.01);
+  assert.equal(bn('BTC').intervalHours, 8);
+  assert.equal(snap.venues.find((v) => v.name === 'Bybit').ok, false);
+  assert.deepEqual(coin('BTC').blendedFrom, ['Binance'], 'the long/short figure says it is Binance alone');
+  assert.match(coin('BTC').note, /on Binance\./);
+  assert.ok(!coin('BTC').openInterestFrom.includes('Bybit'));
+  assert.equal(coin('BTC').coinbasePremiumVs, 'Binance futures');
+});

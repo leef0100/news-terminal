@@ -37,6 +37,7 @@ export function demoMarketFetch(now = Date.now) {
     const t = now();
     const coinOf = (re) => (u.match(re) || [])[1];
 
+    if (u.includes('/fapi/v1/fundingInfo')) return json([]);
     if (u.includes('/fapi/v1/premiumIndex')) {
       return json(Object.keys(BASE).map((c) => ({ symbol: c + 'USDT', markPrice: String(priceAt(c, t)), lastFundingRate: String(FUND[c]) })));
     }

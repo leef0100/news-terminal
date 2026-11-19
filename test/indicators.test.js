@@ -107,20 +107,72 @@ test('position size: risk decides the size; leverage decides margin and liquidat
   const r = I.positionSize({ account: 1000, riskPct: 1, entry: 100, stop: 95, leverage: 10 });
   assert.equal(r.side, 'long');
   near(r.riskUsd, 10); near(r.qty, 2); near(r.notional, 200); near(r.margin, 20);
-  near(r.liq, 90.5);
+  near(r.liq, 100 - 9 / 0.99, 1e-9);   // 50x-max market: maintenance is 1%
   assert.equal(r.stopBeyondLiq, false);
   same(r.targets.map((t) => t.price), [105, 110, 115]);
   const hot = I.positionSize({ account: 1000, riskPct: 1, entry: 100, stop: 95, leverage: 50 });
-  near(hot.liq, 98.5);
+  near(hot.liq, 100 - 1 / 0.99, 1e-9);
   assert.equal(hot.stopBeyondLiq, true, 'liquidated before the stop');
   const short = I.positionSize({ account: 1000, riskPct: 2, entry: 100, stop: 104, leverage: 5 });
   assert.equal(short.side, 'short');
-  near(short.qty, 5); near(short.liq, 119.5);
+  near(short.qty, 5); near(short.liq, 100 + 19 / 1.01, 1e-9);
   same(short.targets.map((t) => t.price), [96, 92, 88]);
   assert.equal(I.positionSize({ account: 100, riskPct: 5, entry: 100, stop: 99.9, leverage: 1 }).tooBig, true);
   assert.equal(I.positionSize({ account: 1000, riskPct: 1, entry: 100, stop: 90, leverage: 1 }).liq, null);
   assert.equal(I.positionSize({ account: 1000, riskPct: 1, entry: 100, stop: 100, leverage: 5 }), null);
   assert.equal(I.positionSize({ account: '', riskPct: 1, entry: 100, stop: 90 }), null);
+});
+
+test('position size: liquidation follows the market\'s own margin rule, and bad inputs give nothing', () => {
+  // Worked from Hyperliquid's published formula. A 40x-max market keeps 1.25% maintenance.
+  const btc = I.positionSize({ account: 10000, riskPct: 1, entry: 100000, stop: 96000, leverage: 20, maxLeverage: 40 });
+  near(btc.liq, 96202.53, 0.01);
+  assert.equal(btc.stopBeyondLiq, true, 'at 20x this stop is past the liquidation price');
+  const thin = I.positionSize({ account: 1000, riskPct: 1, entry: 100, stop: 75, leverage: 3, maxLeverage: 3 });
+  near(thin.liq, 80, 1e-9);
+  assert.equal(thin.stopBeyondLiq, true);
+  const capped = I.positionSize({ account: 1000, riskPct: 1, entry: 100, stop: 99, leverage: 250, maxLeverage: 40 });
+  assert.equal(capped.leverage, 40);
+  assert.equal(capped.leverageCapped, true);
+  assert.ok(capped.liq < 100, 'a long is never shown as liquidated above its entry');
+  assert.equal(I.positionSize({ account: 1000, riskPct: 1, entry: 100, stop: 95, leverage: -5 }), null);
+  assert.equal(I.positionSize({ account: 1000, riskPct: 1, entry: 100, stop: 95, leverage: 0.5 }), null);
+  assert.equal(I.positionSize({ account: 1000, riskPct: 250, entry: 100, stop: 95, leverage: 5 }), null, 'cannot risk more than the account');
+  assert.equal(I.positionSize({ account: 1000, riskPct: 1, entry: 100, stop: 95, leverage: '' }).leverage, 1);
+  same(I.positionSize({ account: 1000, riskPct: 1, entry: 100, stop: 160, leverage: 1 }).targets.map((t) => t.price), [40], 'targets below zero are dropped');
+});
+
+test('review cases: flat RSI, volume ratio, profile edges, wiped-out liquidations, thin confluence', () => {
+  assert.equal(I.rsi(new Array(20).fill(5), 14)[19], 50, 'a price that has not moved is neutral');
+  // Twenty quiet hours, one loud finished hour, then the hour still forming.
+  const list = [];
+  for (let i = 0; i < 40; i++) list.push(candle(i * 3600, 100, 101, 99, 100, 100));
+  list.push(candle(40 * 3600, 100, 101, 99, 100, 1000), candle(41 * 3600, 100, 101, 99, 100, 5));
+  near(I.summarize(list, '1h').volRatio, 10);
+  assert.equal(I.summarize(list, '1h').trend, null, 'no trend is claimed before there are 50 candles');
+  // A candle from 10.99 to 20.01 barely touches the first and last of ten steps.
+  const vp = I.volumeProfile([candle(0, 11, 20.01, 10.99, 15, 902), candle(1, 10, 10, 10, 10, 0), candle(2, 21, 21, 21, 21, 0)], 11);
+  assert.ok(vp.bins[0].vol < 2 && vp.bins[10].vol < 2 && vp.bins[5].vol > 90, 'volume follows how much of the range is in each step');
+  near(vp.bins.reduce((a, b) => a + b.vol, 0), 902, 1e-6);
+  // Heavy trading at 100, a drop to 80 that closes out the longs, then back to 105.
+  const path = [candle(0, 100, 101, 99, 100, 1000), candle(1, 100, 100, 80, 82, 10), candle(2, 82, 106, 82, 105, 10)];
+  const live = I.liquidationModel(null, 105, 60, path);
+  const longsNear = (m) => m.bins.filter((b) => b.mid > 88 && b.mid < 100).reduce((a, b) => a + b.long, 0);
+  assert.ok(longsNear(live) < 20, 'longs from 100 were already closed out by the drop to 80');
+  assert.ok(longsNear(I.liquidationModel(null, 105, 60, [path[0], candle(1, 100, 106, 99.5, 105, 10)])) > 300, 'and are shown when price never went there');
+  // Barely above the average on three timeframes, stretched and crowded: not "most readings".
+  const s = (extra) => ({ close: 100.01, ema9: 100, ema21: 100, ema50: 100, ema200: NaN, rsi: 85, atr: 1, vwap: 100, vwapBars: 30, volRatio: 1, trend: 'flat', ...extra });
+  const thin = I.confluence({ tf: { '1d': s(), '4h': s(), '1h': s() }, price: 100.01, levels: [], fundingAnnualPct: 120, longPct: 80 });
+  assert.equal(thin.verdict, 'mixed');
+  assert.equal(thin.up, 0);
+  assert.equal(I.confluence({ tf: { '1d': s({ trend: 'up' }), '4h': s({ trend: 'up' }), '1h': s({ trend: 'up', ema9: NaN, rsi: NaN, vwap: NaN }) }, price: 101, levels: [] }).verdict, 'unknown', 'three readings are too few to call');
+  const early = I.confluence({ tf: { '1h': s({ vwapBars: 1 }) }, price: 100, levels: [] });
+  assert.ok(!early.factors.some((f) => f.id === 'vwap'), 'a VWAP one candle old does not vote');
+  // Yesterday is found by date. A stale list must not pass an older day off as yesterday.
+  const day = 86400, daily = [candle(0, 1, 5, 1, 2), candle(day, 2, 9, 2, 3)];
+  const stale = I.keyLevels({ price: 3, daily, now: 3 * day * 1000 + 5000 });
+  assert.ok(!stale.some((l) => /Yesterday|Today|Pivot/.test(l.label)));
+  assert.equal(I.keyLevels({ price: 3, daily, now: 2 * day * 1000 + 5000 }).find((l) => l.label === 'Yesterday high').price, 9);
 });
 
 function trend(n, start, step) {
@@ -143,6 +195,7 @@ test('summary and confluence: a steady climb reads up, a steady fall reads down,
   const cu = I.confluence({ tf: { '1d': su, '4h': su, '1h': su, '15m': su }, price, levels: [], fundingAnnualPct: 5, longPct: 52 });
   assert.equal(cu.verdict, 'up');
   assert.ok(cu.up >= 4 && cu.down === 0);
+  assert.match(cu.text, /^\d of \d readings lean up, with 1 caution$/);
   assert.equal(cu.factors.find((f) => f.id === 'rsi').lean, 'caution', 'a stretched RSI is a caution, not a vote');
   const cd = I.confluence({ tf: { '1d': sd, '4h': sd, '1h': sd, '15m': sd }, price: sd.close, levels: [], fundingAnnualPct: -45, longPct: 71 });
   assert.equal(cd.verdict, 'down');

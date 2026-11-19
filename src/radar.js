@@ -19,15 +19,16 @@ const num = (v) => {
 };
 
 // Longs vs shorts as a plain statement, from the blended account ratio and funding.
-export function readTilt(longPct, fundingAvg8h) {
+export function readTilt(longPct, fundingAvg8h, from = []) {
   if (longPct == null) return { tilt: 'unknown', note: 'No positioning data from any venue right now.' };
   const pct = Math.round(longPct);
+  const where = from.length ? ' on ' + from.join(' and ') : '';
   const paying = fundingAvg8h == null ? '' : fundingAvg8h > 0 ? ' Longs are paying funding.' : fundingAvg8h < 0 ? ' Shorts are paying funding.' : '';
-  if (longPct >= 65) return { tilt: 'long', note: `Crowded long: ${pct}% of accounts are long.` + paying };
-  if (longPct <= 35) return { tilt: 'short', note: `Crowded short: ${100 - pct}% of accounts are short.` + paying };
-  if (longPct >= 55) return { tilt: 'long', note: `Leaning long: ${pct}% of accounts are long.` + paying };
-  if (longPct <= 45) return { tilt: 'short', note: `Leaning short: ${100 - pct}% of accounts are short.` + paying };
-  return { tilt: 'balanced', note: `Balanced: ${pct}% long, ${100 - pct}% short.` + paying };
+  if (pct >= 65) return { tilt: 'long', note: `Crowded long: ${pct}% of accounts are long${where}.` + paying };
+  if (pct <= 35) return { tilt: 'short', note: `Crowded short: ${100 - pct}% of accounts are short${where}.` + paying };
+  if (pct >= 55) return { tilt: 'long', note: `Leaning long: ${pct}% of accounts are long${where}.` + paying };
+  if (pct <= 45) return { tilt: 'short', note: `Leaning short: ${100 - pct}% of accounts are short${where}.` + paying };
+  return { tilt: 'balanced', note: `Balanced: ${pct}% long, ${100 - pct}% short${where}.` + paying };
 }
 
 export function createRadar({ fetchImpl = fetch, hl, now = Date.now, coins = RADAR_COINS, ttlMs = 20000, bigTradeUsd = 250000, timeoutMs = 6000 } = {}) {
@@ -38,6 +39,25 @@ export function createRadar({ fetchImpl = fetch, hl, now = Date.now, coins = RAD
     const res = await fetchImpl(url, { headers: { accept: 'application/json', 'user-agent': 'radar/0.1' }, signal: AbortSignal.timeout(timeoutMs) });
     if (!res.ok) throw new Error('HTTP ' + res.status);
     return res.json();
+  }
+
+  // How often each Binance market settles funding. Markets not listed settle every 8 hours.
+  // Asked for once an hour; if it cannot be read, the last answer (or 8 hours) is used.
+  let intervalCache = { at: 0, map: Object.create(null) };
+  async function binanceIntervals() {
+    if (now() - intervalCache.at < 3600000) return intervalCache.map;
+    try {
+      const rows = await getJson(`${BINANCE}/fapi/v1/fundingInfo`);
+      const map = Object.create(null);
+      for (const r of Array.isArray(rows) ? rows : []) {
+        const h = num(r.fundingIntervalHours);
+        if (typeof r.symbol === 'string' && h > 0) map[r.symbol] = h;
+      }
+      intervalCache = { at: now(), map };
+    } catch {
+      intervalCache = { at: now() - 3300000, map: intervalCache.map }; // try again in five minutes
+    }
+    return intervalCache.map;
   }
 
   // Runs a venue's calls; the venue is "ok" if any call worked, and keeps the first error.
@@ -59,6 +79,7 @@ export function createRadar({ fetchImpl = fetch, hl, now = Date.now, coins = RAD
 
     const binance = venue([
       async () => {
+        const intervals = await binanceIntervals();
         const all = await getJson(`${BINANCE}/fapi/v1/premiumIndex`);
         for (const row of Array.isArray(all) ? all : []) {
           const coin = String(row.symbol || '').replace(/USDT$/, '');
@@ -66,7 +87,10 @@ export function createRadar({ fetchImpl = fetch, hl, now = Date.now, coins = RAD
           if (!slot || !String(row.symbol).endsWith('USDT')) continue;
           slot.binanceMark = num(row.markPrice);
           const rate = num(row.lastFundingRate);
-          if (rate != null) slot.funding.push({ venue: 'Binance', rate8h: rate });
+          // Binance settles funding every 8 hours on most markets and every 4 (or 1) on
+          // others. The rate is per settlement, so it is put on an 8-hour footing to compare.
+          const hours = intervals[row.symbol] || 8;
+          if (rate != null) slot.funding.push({ venue: 'Binance', rate8h: rate * 8 / hours, intervalHours: hours });
         }
       },
       ...coins.flatMap((coin) => [
@@ -96,7 +120,8 @@ export function createRadar({ fetchImpl = fetch, hl, now = Date.now, coins = RAD
           const slot = byCoin[coin];
           if (!slot || !String(row.symbol).endsWith('USDT')) continue;
           const rate = num(row.fundingRate);
-          if (rate != null) slot.funding.push({ venue: 'Bybit', rate8h: rate });
+          const hours = num(row.fundingIntervalHour) > 0 ? num(row.fundingIntervalHour) : 8;
+          if (rate != null) slot.funding.push({ venue: 'Bybit', rate8h: rate * 8 / hours, intervalHours: hours });
           const oi = num(row.openInterestValue);
           if (oi != null) slot.openInterest.push({ venue: 'Bybit', usd: oi });
         }
@@ -115,7 +140,7 @@ export function createRadar({ fetchImpl = fetch, hl, now = Date.now, coins = RAD
           if (!slot) continue;
           slot.price = m.mark;
           // Hyperliquid funding is hourly; show it on the same 8-hour basis as the others.
-          slot.funding.push({ venue: 'Hyperliquid', rate8h: m.fundingHourly * 8 });
+          slot.funding.push({ venue: 'Hyperliquid', rate8h: m.fundingHourly * 8, intervalHours: 1 });
           slot.openInterest.push({ venue: 'Hyperliquid', usd: m.openInterestUsd });
         }
       },
@@ -145,12 +170,19 @@ export function createRadar({ fetchImpl = fetch, hl, now = Date.now, coins = RAD
       const crowd = s.positioning.filter((p) => !p.top);
       const blended = crowd.length ? crowd.reduce((a, p) => a + p.longPct, 0) / crowd.length : null;
       const fundingAvg = s.funding.length ? s.funding.reduce((a, f) => a + f.rate8h, 0) / s.funding.length : null;
-      const read = readTilt(blended, fundingAvg);
+      const from = [...new Set(crowd.map((p) => p.venue))];
+      const read = readTilt(blended, fundingAvg, from);
+      // Coinbase spot against a futures price: the gap includes the futures' own premium.
+      const premiumVs = spot[coin] != null && perp ? (s.binanceMark != null ? 'Binance futures' : 'Hyperliquid') : null;
       return {
         coin,
         price: s.price,
         positioning: s.positioning.map((p) => ({ ...p, longPct: +p.longPct.toFixed(2), shortPct: +(100 - p.longPct).toFixed(2) })),
         blendedLongPct: blended == null ? null : +blended.toFixed(2),
+        // Which venues the figure above is built from: it changes meaning when one is missing.
+        blendedFrom: from,
+        openInterestFrom: s.openInterest.map((o) => o.venue),
+        coinbasePremiumVs: premiumVs,
         tilt: read.tilt,
         note: read.note,
         // 8-hour rate x 3 per day x 365 = yearly rate, shown as a percentage.

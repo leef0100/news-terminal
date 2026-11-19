@@ -14,6 +14,10 @@ export function createHyperliquid({ fetchImpl = fetch, now = Date.now, timeoutMs
   const inflight = new Map();
   const failures = new Map();
   const FAIL_MS = 2000;
+  // An old answer may stand in for a failed call, but only briefly: a price from long ago
+  // shown as current is worse than an honest error.
+  const STALE_MS = 90000;
+  const usable = (hit) => hit && now() - hit.at < STALE_MS;
   // This server is one address to the exchange, however many people it serves. Its own
   // spending is capped below the exchange's limit; past that, the last answer is reused.
   // Browsers fetch history from the exchange themselves where they can, each on their own
@@ -40,13 +44,13 @@ export function createHyperliquid({ fetchImpl = fetch, now = Date.now, timeoutMs
     // that is already struggling. The last good answer is served meanwhile, if there is one.
     const failed = failures.get(key);
     if (failed && now() - failed.at < FAIL_MS) {
-      if (hit) return hit.data;
+      if (usable(hit)) return hit.data;
       throw failed.error;
     }
     // Requests that arrive while one is already on its way share its answer.
     if (inflight.has(key)) return inflight.get(key);
     if (!afford(body.type)) {
-      if (hit) return hit.data;
+      if (usable(hit)) return hit.data;
       throw new Error('Hyperliquid allowance used up for this minute');
     }
     const run = (async () => {
@@ -69,7 +73,7 @@ export function createHyperliquid({ fetchImpl = fetch, now = Date.now, timeoutMs
         seen.lastError = String(error?.message || error);
         seen.lastErrorAt = now();
         if (failures.size > 400) failures.delete(failures.keys().next().value);
-        if (hit) return hit.data;
+        if (usable(hit)) return hit.data;
         throw error;
       })
       .finally(() => inflight.delete(key));

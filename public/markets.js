@@ -20,7 +20,8 @@
   if (INTERVALS.indexOf(st.interval) === -1) st.interval = '15m';
   // The chart library draws UTC; shifting each timestamp by its own local offset makes the
   // axis read in local time, including across a daylight-saving change.
-  function local(sec) { return sec - new Date(sec * 1000).getTimezoneOffset() * 60; }
+  // Chart times are real UTC seconds; labels are localised by HL.chartTime.
+  function local(sec) { return sec; }
 
   function el(tag, cls, text) {
     var n = document.createElement(tag);
@@ -140,12 +141,14 @@
 
   function ensureChart() {
     if (st.chart || !window.LightweightCharts) return;
+    var chartTime = window.HL.chartTime(function () { return st.interval; });
     st.chart = window.LightweightCharts.createChart($('mChart'), {
       autoSize: true,
       layout: { background: { color: 'transparent' }, textColor: '#C2D4CA', fontFamily: 'Inter, system-ui, sans-serif' },
       grid: { vertLines: { color: 'rgba(50, 80, 64, .5)' }, horzLines: { color: 'rgba(50, 80, 64, .5)' } },
       rightPriceScale: { borderColor: '#325040' },
-      timeScale: { borderColor: '#325040', timeVisible: true, secondsVisible: false },
+      timeScale: { borderColor: '#325040', timeVisible: true, secondsVisible: false, tickMarkFormatter: chartTime.tickMarkFormatter },
+      localization: { timeFormatter: chartTime.timeFormatter },
       crosshair: { mode: 0 }
     });
     st.candles = st.chart.addCandlestickSeries({ upColor: '#6BE89A', borderUpColor: '#6BE89A', wickUpColor: '#6BE89A', downColor: '#F2876B', borderDownColor: '#F2876B', wickDownColor: '#F2876B' });

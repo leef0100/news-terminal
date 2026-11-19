@@ -55,7 +55,7 @@ window.HL = (function () {
         return rows.map(function (c) { return { time: Math.floor(c.t / 1000), open: Number(c.o), high: Number(c.h), low: Number(c.l), close: Number(c.c), volume: Number(c.v) }; })
           .filter(function (c) { return isFinite(c.close) && c.time > 0; });
       },
-      '/api/markets/candles?coin=' + encodeURIComponent(coin) + '&interval=' + encodeURIComponent(interval),
+      '/api/markets/candles?coin=' + encodeURIComponent(coin) + '&interval=' + encodeURIComponent(interval) + ((bars || 300) > 300 ? '&bars=600' : ''),
       function (d) { return d.candles || []; }
     );
   }
@@ -151,7 +151,38 @@ window.HL = (function () {
     };
   }
 
-  return {
+  // Charts are given real (UTC) times and only the labels are put in the viewer's own
+  // time zone. Shifting the times themselves breaks twice a year, when two different hours
+  // land on the same clock time, and puts every daily candle under the wrong date for
+  // anyone west of UTC. Daily candles are UTC days, so they are labelled by their UTC date.
+  var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  function chartTime(getInterval) {
+    var two = function (n) { return String(n).padStart(2, '0'); };
+    var parts = function (sec) {
+      var d = new Date(sec * 1000), utc = getInterval() === '1d';
+      return utc
+        ? { y: d.getUTCFullYear(), mo: d.getUTCMonth(), d: d.getUTCDate(), h: 0, mi: 0, daily: true }
+        : { y: d.getFullYear(), mo: d.getMonth(), d: d.getDate(), h: d.getHours(), mi: d.getMinutes(), daily: false };
+    };
+    return {
+      timeFormatter: function (sec) {
+        var p = parts(sec);
+        return p.d + ' ' + MONTHS[p.mo] + (p.daily ? ' ' + p.y + ' (UTC day)' : ' ' + two(p.h) + ':' + two(p.mi));
+      },
+      tickMarkFormatter: function (sec, type) {
+        var p = parts(sec);
+        if (type === 0) return String(p.y);
+        if (type === 1) return MONTHS[p.mo];
+        if (p.daily) return String(p.d);
+        var clock = two(p.h) + ':' + two(p.mi);
+        // The chart places day marks at midnight UTC, which is mid-day or evening elsewhere.
+        if (type === 2) return clock === '00:00' ? p.d + ' ' + MONTHS[p.mo] : p.d + ' ' + clock;
+        return clock;
+      }
+    };
+  }
+
+  return { chartTime: chartTime,
     markets: markets, candles: candles, depth: depth, funding: funding, stream: stream,
     isDemo: function () { return demo === true; },
     // In demo mode there is no exchange behind the numbers, so nothing to stream.

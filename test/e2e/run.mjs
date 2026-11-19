@@ -176,9 +176,9 @@ const type = async (sel, v) => { await p.$eval(sel, (n, val) => { n.value = val;
 await type('#psAccount', '1000'); await type('#psRisk', '1'); await type('#psEntry', '100'); await type('#psStop', '95'); await type('#psLev', '10');
 await sleep(150);
 const ps = await p.$eval('#psOut', (n) => n.innerText.replace(/\s+/g, ' '));
-check('radar: position size follows the risk', /Long/.test(ps) && /\$10 if the stop/.test(ps) && /\(\$200\)/.test(ps) && /\$20 \(2% of account\)/.test(ps), ps.slice(0, 160));
+check('radar: position size follows the risk', /Long/.test(ps) && /\$10\.00 if the stop/.test(ps) && /\(\$200\.00\)/.test(ps) && /\$20\.00 \(2\.0% of account\)/.test(ps), ps.slice(0, 160));
 await type('#psLev', '50'); await sleep(150);
-check('radar: warns when the stop sits beyond liquidation', /liquidat/i.test(await p.$eval('#psOut .psWarn', (n) => n.textContent).catch(() => '')));
+check('radar: warns when the stop sits beyond liquidation', /at most 40x/.test(await p.$eval('#psOut', (n) => n.innerText)) && /liquidated before/.test(await p.$eval('#psOut', (n) => n.innerText)));
 await p.click('#psUsePrice'); await p.click('#psUseSupport'); await sleep(150);
 check('radar: entry and stop can be filled from the chart levels', Number(await p.$eval('#psEntry', (n) => n.value)) > Number(await p.$eval('#psStop', (n) => n.value)) && Number(await p.$eval('#psStop', (n) => n.value)) > 0);
 // Another market and candle size.
