@@ -64,6 +64,10 @@ test('server: pages, cache and security headers, feed, tokens, markets, radar, c
     assert.equal((await fetch(url(server, '/api/markets/book?coin=..%2F'))).status, 400);
     assert.equal((await fetch(url(server, '/api/markets/candles?coin=FAKE1'))).status, 400, 'made-up markets are refused');
     assert.ok((await (await fetch(url(server, '/api/markets/candles?coin=BTC&interval=1h'))).json()).candles.length > 100);
+    const status = await (await fetch(url(server, '/api/status'))).json();
+    assert.ok(status.feed.sources.length >= 4 && status.feed.sources.every((x) => x.state === 'ok' && x.medianDelaySeconds === null), 'demo sources report, with no made-up delay figure');
+    assert.deepEqual(status.market.venues.map((v) => v.name), ['Binance', 'Bybit', 'Hyperliquid', 'Coinbase', 'Papertrade']);
+    assert.ok(status.market.exchange.allowancePerMinute > 0 && status.viewers.limit > 0);
     const depth = await (await fetch(url(server, '/api/markets/depth?coin=BTC&sig=3'))).json();
     assert.ok(depth.bids.length > 5 && depth.asks.length > 5 && depth.bids[0].px < depth.asks[0].px);
     const funding = await (await fetch(url(server, '/api/markets/funding?coin=BTC'))).json();

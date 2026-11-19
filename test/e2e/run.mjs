@@ -192,6 +192,37 @@ await p.goto(BASE + '/#markets'); await p.waitForSelector('#book .bookRow.bid');
 await sleep(600);
 check('markets demo note says prices are invented', /invented/.test(await p.$eval('#mLiveText', (n) => n.textContent)));
 
+// ----- desk tools: all markets, search, status -----
+await p.waitForFunction(() => document.querySelectorAll('#screener tr').length === 7, { timeout: 8000 });
+const firstBy = async (label) => { await p.evaluate((l) => [...document.querySelectorAll('#screener .thBtn')].find((b) => b.textContent.startsWith(l)).click(), label); return p.$eval('#screener tr:nth-child(2) td', (n) => n.textContent); };
+const byName = await firstBy('Market');
+const byNameBack = await firstBy('Market');
+check('markets: the table of all markets sorts both ways', byName === 'BTC' && byNameBack === 'XRP', byName + ' / ' + byNameBack);
+await p.type('#scFilter', 'sol'); await sleep(100);
+check('markets: the table filters by name', (await p.$$('#screener tr')).length === 2 && /1 of 6/.test(await p.$eval('#scCount', (n) => n.textContent)));
+await p.evaluate(() => document.querySelector('#screener tr:nth-child(2) button').click());
+await p.waitForFunction(() => /^SOL/.test(document.querySelector('#mTitle').textContent), { timeout: 8000 });
+check('markets: picking a row opens its chart', true);
+await p.keyboard.down('Control'); await p.keyboard.press('k'); await p.keyboard.up('Control');
+await p.waitForFunction(() => document.querySelector('#palDlg').open && document.querySelectorAll('#palList .palItem').length > 6, { timeout: 8000 });
+await p.type('#palInput', 'hype'); await sleep(200);
+const palFirst = await p.$eval('#palList .palItem.on', (n) => n.textContent);
+await p.keyboard.press('ArrowDown'); await p.keyboard.press('Enter');
+await p.waitForFunction(() => location.hash === '#radar' && /^HYPE/.test(document.querySelector('#rTitle').textContent), { timeout: 10000 });
+check('search: Ctrl+K finds a market and opens it in Radar', /HYPE chart/.test(palFirst), palFirst);
+await p.keyboard.down('Control'); await p.keyboard.press('k'); await p.keyboard.up('Control');
+await p.waitForFunction(() => document.querySelectorAll('#palList .palItem').length > 6, { timeout: 8000 });
+await p.type('#palInput', 'sample headline'); await sleep(300);
+const story = await p.$eval('#palList .palItem.on .palKind', (n) => n.textContent).catch(() => '');
+await p.keyboard.press('Enter');
+await p.waitForFunction(() => location.hash.startsWith('#n-') || !document.querySelector('#detail').hidden, { timeout: 8000 });
+check('search: finds a headline and opens the story', story === 'Story');
+await p.goto(BASE + '/#status');
+await p.waitForFunction(() => document.querySelectorAll('#stFeeds tr').length > 3 && document.querySelectorAll('#stVenues tr').length === 6, { timeout: 8000 });
+const stText = await p.$eval('#view-status', (n) => n.innerText);
+check('status: lists every news source and market venue with its state', /Reporting/.test(stText) && /Answering/.test(stText) && /Papertrade/.test(stText) && /demo/i.test(stText));
+await p.evaluate(() => { localStorage.removeItem('nt.rcoin'); localStorage.removeItem('nt.coin'); });
+
 // ----- markets with a live stream -----
 let wss = mockExchange(3999);
 const m = await mk({ init: () => { window.HALFTONE_HL_WS = 'ws://127.0.0.1:3999'; } });
@@ -264,7 +295,7 @@ await p.goto(BASE + '/#home'); await p.waitForSelector('.clip');
 check('home collage', (await p.$$('.clip')).length === 14);
 await sleep(500); await shot(p, 'home3');
 await p.setViewport({ width: 390, height: 844 });
-for (const v of ['home', 'news', 'breaking', 'radar', 'markets']) {
+for (const v of ['home', 'news', 'breaking', 'radar', 'markets', 'status']) {
   await p.goto(BASE + '/#' + v); await sleep(700);
   check('phone ' + v + ' has no sideways scroll', !(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth)));
   if (v === 'news') await shot(p, 'phone-news');

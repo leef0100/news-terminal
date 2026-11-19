@@ -414,3 +414,40 @@ a.alsoRow:hover .alsoText { text-decoration: underline; }
 /* The Radar's side column is ordinary page content: it scrolls with the page rather than inside its own box. */
 .detail.flow { position: static; max-height: none; overflow: visible; }
 @media (min-width: 900px) { .factors { display: grid; grid-template-columns: 1fr 1fr; column-gap: 28px; } }
+
+/* ---------- desk tools: all markets, status, search ---------- */
+.screener { width: 100%; border-collapse: collapse; font-size: 13px; }
+.screener th { text-align: right; padding: 0 8px 8px; font-size: 12px; font-weight: 600; color: var(--text-3); white-space: nowrap; }
+.screener th:first-child, .screener td:first-child { text-align: left; }
+.screener td { text-align: right; padding: 9px 8px; border-top: 1px solid var(--line); white-space: nowrap; }
+.screener tr:hover td { background: var(--bar); }
+.screener .up { color: var(--accent); } .screener .down { color: #F7A58E; }
+.thBtn { min-height: 36px; padding: 0 4px; border: 0; background: transparent; color: var(--text-3); font: inherit; font-weight: 600; }
+.thBtn:hover, .thBtn.on { color: var(--text); }
+.screener .linkBtn { min-height: 0; padding: 0; }
+.scFilter { height: 40px; width: 180px; flex: none; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--bar); color: var(--text); font: inherit; }
+.screener.stTable th, .screener.stTable td { text-align: left; }
+.screener.stTable td { white-space: normal; vertical-align: top; }
+.screener.stTable td.mono { white-space: nowrap; }
+.mStats.flush { padding: 0; }
+.stTile { display: flex; flex-direction: column; gap: 2px; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--line); background: var(--panel); }
+.stTile .statLabel { font-size: 12px; color: var(--text-3); }
+
+.stTile .statValue { font-family: var(--serif); font-size: 28px; font-weight: 400; line-height: 1.1; }
+.stPill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.stPill.good { background: var(--accent-bg); color: var(--accent); }
+.stPill.bad { background: #45261D; color: #F7A58E; }
+.stPill.wait { background: var(--bar); color: var(--text-2); }
+.palBtn { gap: 8px; color: var(--text-2); }
+.palBtn kbd, .palHint kbd { font-family: var(--mono); font-size: 11px; padding: 2px 6px; border-radius: 5px; border: 1px solid var(--line-2); color: var(--text-3); }
+.dlg.pal { width: min(620px, calc(100vw - 24px)); padding: 14px; margin-top: 12vh; }
+.pal input { width: 100%; height: 48px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line-2); background: var(--bar); color: var(--text); font: inherit; font-size: 16px; }
+.palList { list-style: none; margin: 10px 0 0; padding: 0; max-height: min(52vh, 460px); overflow-y: auto; }
+.palItem { display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 10px; align-items: baseline; padding: 10px; border-radius: 10px; cursor: pointer; }
+.palItem.on, .palItem:hover { background: var(--panel-on); }
+.palKind { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); }
+.palBody { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.palText { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palEmpty { padding: 14px 10px; }
+.dlg.pal .palHint { margin: 10px 4px 2px; }
+@media (max-width: 900px) { .palWord, .palBtn kbd { display: none; } .palBtn { padding: 0 12px; } }

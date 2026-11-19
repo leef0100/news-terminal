@@ -3,13 +3,15 @@ import { fetchFeed } from './rss.js';
 import { enrich } from '../enrich.js';
 
 export function createPoller({ sources, store, pollSeconds = 20, fetchImpl = fetch, now = Date.now, log = console }) {
-  const state = new Map(sources.map((s) => [s.id, { cache: {}, first: true, ok: null, error: null, lastPoll: null, count: 0, seen: new Set() }]));
+  const state = new Map(sources.map((s) => [s.id, { cache: {}, first: true, ok: null, error: null, lastPoll: null, lastOk: null, ms: null, count: 0, seen: new Set() }]));
   let timer = null;
 
   async function pollOne(source) {
     const st = state.get(source.id);
+    const began = now();
     try {
       const entries = await fetchFeed(source, { fetchImpl, cache: st.cache });
+      st.ms = now() - began;
       const seenAt = now();
       for (const e of entries) {
         // Each entry is handled once per source, for good. Feeds keep listing old entries
@@ -26,6 +28,7 @@ export function createPoller({ sources, store, pollSeconds = 20, fetchImpl = fet
       st.first = false;
       st.ok = true;
       st.error = null;
+      st.lastOk = now();
     } catch (err) {
       st.ok = false;
       st.error = String(err.message || err);
@@ -58,7 +61,7 @@ export function createPoller({ sources, store, pollSeconds = 20, fetchImpl = fet
     status() {
       return sources.map((s) => {
         const st = state.get(s.id);
-        return { id: s.id, name: s.name, ok: st.ok, error: st.error, lastPoll: st.lastPoll, items: st.count };
+        return { id: s.id, name: s.name, ok: st.ok, error: st.error, lastPoll: st.lastPoll, lastOk: st.lastOk, ms: st.ms, items: st.count };
       });
     }
   };

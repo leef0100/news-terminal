@@ -763,6 +763,14 @@
   $('psUseSupport').addEventListener('click', function () { stopAt('below'); });
   $('psUseResist').addEventListener('click', function () { stopAt('above'); });
 
+  // Lets the search box open a market here.
+  window.HalftoneRadar = {
+    open: function (coin) {
+      if (st.active) { setCoin(coin); return; }
+      st.coin = coin;
+      remember('nt.rcoin', coin);
+    }
+  };
   document.addEventListener('nt:view', function (e) { st.onPage = e.detail === 'radar'; start(); });
   document.addEventListener('visibilitychange', function () { if (st.onPage) start(); });
 })();

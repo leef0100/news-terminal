@@ -209,6 +209,54 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
       res.set('cache-control', 'no-store').json({ demo, role, items: store.size(), sources: poller ? poller.status() : [] });
     });
 
+    // How fresh every source is, in one place: what the Status page shows. Feed figures
+    // come from the stories themselves, so they are right on every kind of server; the
+    // poller's own record is added where this process runs it.
+    const median = (list) => { if (!list.length) return null; const s = list.slice().sort((x, y) => x - y); return s[Math.floor(s.length / 2)]; };
+    app.get('/api/status', async (_req, res) => {
+      const t = Date.now();
+      const polled = new Map((poller ? poller.status() : []).map((p) => [p.id, p]));
+      const seenSource = new Map();
+      let newest = 0;
+      for (const it of store.list(500)) {
+        let s = seenSource.get(it.sourceId);
+        if (!s) seenSource.set(it.sourceId, (s = { name: it.source, topic: it.topic, items: 0, newest: 0, delays: [] }));
+        s.items += 1;
+        if (it.ts > s.newest) s.newest = it.ts;
+        if (it.ts > newest) newest = it.ts;
+        // Time from the publisher's own timestamp to the moment it reached us. Stories
+        // already in a feed when we first read it say nothing about speed, so they are left out.
+        if (!demo && !it.backfill && it.seenAt >= it.ts) s.delays.push(it.seenAt - it.ts);
+      }
+      const known = demo ? [] : (config?.sources || []).map((c) => ({ id: c.id, name: c.name, topic: c.topic || null }));
+      for (const [id, s] of seenSource) if (!known.some((k) => k.id === id)) known.push({ id, name: s.name, topic: s.topic || null });
+      const sources = known.map((k) => {
+        const s = seenSource.get(k.id);
+        const p = polled.get(k.id);
+        const state = p ? (p.ok === false ? 'failing' : p.ok === null ? 'waiting' : 'ok') : s ? 'ok' : 'unknown';
+        const d = s ? median(s.delays) : null;
+        return {
+          id: k.id, name: k.name, topic: k.topic, state,
+          error: p?.error || null, lastCheck: p?.lastPoll ?? null, lastOk: p?.lastOk ?? null, responseMs: p?.ms ?? null,
+          stories: s?.items || 0, newestStory: s?.newest || null,
+          medianDelaySeconds: d == null ? null : Math.round(d / 1000), timedStories: s?.delays.length || 0
+        };
+      });
+      let market = { at: null, venues: [] };
+      try {
+        const snap = await radar.snapshot();
+        market = { at: snap.at, venues: snap.venues.map((v) => ({ name: v.name, ok: v.ok, partial: v.partial, error: v.error || null })) };
+      } catch (err) {
+        market = { at: null, venues: [], error: String(err.message || err) };
+      }
+      shared(res, 5).json({
+        at: t, demo, role, pollSeconds: config?.pollSeconds ?? 20,
+        feed: { stories: store.size(), newestStory: newest || null, sources },
+        market: { ...market, exchange: hl.health() },
+        viewers: { feed: clients.size, chat: roomCount, limit: sseMax }
+      });
+    });
+
     // Solana tokens matching one ticker or name. Cached per term, shared by everyone.
     // Words in the news right now: their searches are never refused for being too many.
     let inFeed = { version: -1, set: new Set() };

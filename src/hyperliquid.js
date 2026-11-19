@@ -20,6 +20,8 @@ export function createHyperliquid({ fetchImpl = fetch, now = Date.now, timeoutMs
   // allowance, so this path is mostly a fallback.
   let windowStart = 0;
   let spent = 0;
+  // When the exchange last answered and last failed, for the Status page.
+  const seen = { lastOk: null, lastError: null, lastErrorAt: null };
   const afford = (type) => {
     const t = now();
     if (t - windowStart >= 60000) { windowStart = t; spent = 0; }
@@ -58,11 +60,14 @@ export function createHyperliquid({ fetchImpl = fetch, now = Date.now, timeoutMs
       const data = await res.json();
       cache.set(key, { at: now(), data });
       failures.delete(key);
+      seen.lastOk = now();
       if (cache.size > 400) cache.delete(cache.keys().next().value);
       return data;
     })()
       .catch((error) => {
         failures.set(key, { at: now(), error });
+        seen.lastError = String(error?.message || error);
+        seen.lastErrorAt = now();
         if (failures.size > 400) failures.delete(failures.keys().next().value);
         if (hit) return hit.data;
         throw error;
@@ -160,5 +165,7 @@ export function createHyperliquid({ fetchImpl = fetch, now = Date.now, timeoutMs
     return (await markets()).some((m) => m.coin === coin);
   }
 
-  return { markets, book, candles, trades, depth, fundingHistory, has };
+  const health = () => ({ ...seen, spentThisMinute: now() - windowStart >= 60000 ? 0 : spent, allowancePerMinute: weightPerMinute });
+
+  return { markets, book, candles, trades, depth, fundingHistory, has, health };
 }

@@ -398,6 +398,15 @@
     marketsTimer = setInterval(loadMarkets, 15000);
   }
 
+  // Lets the screener and the search box open a market here.
+  window.HalftoneMarkets = {
+    open: function (coin) {
+      if (st.active) { if (coin !== st.coin) setCoin(coin); return; }
+      st.coin = coin;
+      try { localStorage.setItem('nt.coin', coin); } catch (e) { /* ignore */ }
+    }
+  };
+
   var onPage = false;
   $('mSelect').addEventListener('change', function (e) { setCoin(e.target.value); });
   document.addEventListener('nt:view', function (e) {

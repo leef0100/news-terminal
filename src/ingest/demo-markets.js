@@ -125,7 +125,8 @@ export function demoMarketFetch(now = Date.now) {
         const k = bucket - i;
         const big = k % 7 === 0;
         const usd = big ? 300000 + Math.abs(wobble(k, 900000)) : 2000 + Math.abs(wobble(k, 40000));
-        return { coin: body.coin, side: wobble(k + 3, 1) > 0 ? 'B' : 'A', px: mid.toPrecision(7), sz: (usd / mid).toFixed(4), time: k * 4000, tid: k };
+        const at = priceAt(body.coin, k * 4000);
+        return { coin: body.coin, side: hash(k, 7) > 0 ? 'B' : 'A', px: at.toPrecision(7), sz: (usd / at).toFixed(4), time: k * 4000, tid: k };
       }));
     }
     return { ok: false, status: 404, json: async () => ({}) };
