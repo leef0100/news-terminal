@@ -18,11 +18,12 @@ import { startDemo, demoFetch } from './ingest/demo.js';
 import { createChat } from './chat.js';
 import { createHyperliquid, validCoin, INTERVALS } from './hyperliquid.js';
 import { createRadar } from './radar.js';
+import { createXPanel, validHandle } from './xpanel.js';
 import { demoMarketFetch } from './ingest/demo-markets.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
-export async function createApp({ demo = false, config, role = 'all', redisUrl = '', sseMax = 10000, streamsPerAddress = 12, frameAncestors = "'self'", trustProxy = false } = {}) {
+export async function createApp({ demo = false, xToken = '', xDailyPosts = 2000, config, role = 'all', redisUrl = '', sseMax = 10000, streamsPerAddress = 12, frameAncestors = "'self'", trustProxy = false } = {}) {
   // A web-only or ingest-only process has nobody to talk to without Redis: the feed would
   // stay empty for ever. Better to stop here than to start quietly broken.
   if (role !== 'all' && !redisUrl) throw new Error(`ROLE=${role} needs REDIS_URL`);
@@ -38,6 +39,7 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
   const matcher = createTokenMatcher(demo ? { fetchImpl: demoFetch() } : {});
   const marketFetch = demo ? demoMarketFetch() : fetch;
   const hl = createHyperliquid({ fetchImpl: marketFetch });
+  const xpanel = createXPanel({ token: xToken, demo, dailyPosts: xDailyPosts });
   const radar = createRadar({ fetchImpl: marketFetch, hl });
   const poller = ingests && !demo ? createPoller({ sources: config.sources, store, pollSeconds: config.pollSeconds }) : null;
   const hasRoom = (room) => room === 'general' || Boolean(store.get(room));
@@ -253,8 +255,18 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
         at: t, demo, role, pollSeconds: config?.pollSeconds ?? 20,
         feed: { stories: store.size(), newestStory: newest || null, sources },
         market: { ...market, exchange: hl.health() },
+        x: xpanel.health(),
         viewers: { feed: clients.size, chat: roomCount, limit: sseMax }
       });
+    });
+
+    // A viewer's own panel of X accounts. The list of names is the whole request, so two
+    // people following the same accounts share one cached answer.
+    app.get('/api/x', async (req, res) => {
+      const asked = String(req.query.handles || '').split(',').map((h) => h.trim().replace(/^@/, '')).filter(Boolean);
+      if (asked.length > 20 || !asked.every(validHandle)) return refuse(res, 400, { error: 'Up to 20 usernames: letters, numbers and underscores only' });
+      if (!(await local.allow('x:' + req.ip, 60, 60000))) return refuse(res, 429, { error: 'Too many requests, try again in a minute' });
+      shared(res, 5).json(xpanel.panel(asked));
     });
 
     // Solana tokens matching one ticker or name. Cached per term, shared by everyone.
@@ -420,6 +432,7 @@ export async function createApp({ demo = false, config, role = 'all', redisUrl =
       clearInterval(beat);
       clearInterval(reseed);
       if (stopFeed) stopFeed();
+      xpanel.stop();
       for (const res of clients) res.end();
       clients.clear();
       for (const set of roomClients.values()) for (const res of set) res.end();
@@ -439,6 +452,8 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     config,
     role,
     redisUrl: process.env.REDIS_URL || '',
+    xToken: process.env.X_BEARER_TOKEN || '',
+    xDailyPosts: Number(process.env.X_DAILY_POSTS) || 2000,
     sseMax: Number(process.env.SSE_MAX) || 10000,
     streamsPerAddress: Number(process.env.STREAMS_PER_ADDRESS) || 12,
     frameAncestors: process.env.FRAME_ANCESTORS || "'self'",

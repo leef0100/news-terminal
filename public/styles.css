@@ -425,7 +425,8 @@ a.alsoRow:hover .alsoText { text-decoration: underline; }
 .thBtn { min-height: 36px; padding: 0 4px; border: 0; background: transparent; color: var(--text-3); font: inherit; font-weight: 600; }
 .thBtn:hover, .thBtn.on { color: var(--text); }
 .screener .linkBtn { min-height: 0; padding: 0; }
-.scFilter { height: 40px; width: 180px; flex: none; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--bar); color: var(--text); font: inherit; }
+.padHead .row { flex-wrap: wrap; min-width: 0; }
+.scFilter { height: 40px; width: min(180px, 100%); flex: 0 1 auto; min-width: 0; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--bar); color: var(--text); font: inherit; }
 .screener.stTable th, .screener.stTable td { text-align: left; }
 .screener.stTable td { white-space: normal; vertical-align: top; }
 .screener.stTable td.mono { white-space: nowrap; }
@@ -451,3 +452,17 @@ a.alsoRow:hover .alsoText { text-decoration: underline; }
 .palEmpty { padding: 14px 10px; }
 .dlg.pal .palHint { margin: 10px 4px 2px; }
 @media (max-width: 900px) { .palWord, .palBtn kbd { display: none; } .palBtn { padding: 0 12px; } }
+
+/* ---------- my panel ---------- */
+.xpList { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.xpAcct { display: flex; align-items: stretch; gap: 6px; }
+.xpPick { flex: 1; min-width: 0; min-height: 44px; display: flex; flex-direction: column; justify-content: center; gap: 1px; padding: 6px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bar); color: var(--text); text-align: left; font: inherit; }
+.xpAcct.on .xpPick { border-color: var(--accent); background: var(--accent-bg); }
+.xpPick .bad { color: var(--warn); }
+.xpRemove { width: 44px; border-radius: 10px; border: 1px solid var(--line); background: transparent; color: var(--text-3); font-size: 18px; }
+.xpRemove:hover { color: var(--text); border-color: var(--line-3); }
+#xpForm input { flex: 1; min-width: 0; height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--bar); color: var(--text); font: inherit; }
+.xpPost { display: flex; flex-direction: column; gap: 8px; }
+.xpText { font-size: 15px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+.xpPost.placeholder { border-style: dashed; }
+.xpPost.placeholder .xpText { color: var(--text-3); }

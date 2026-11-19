@@ -214,7 +214,7 @@
   var pal = { items: [], shown: [], at: 0, feed: [], markets: [] };
   var PAGES = [
     ['Home', '#home', 'Front page'], ['News', '#news', 'The live feed'], ['Breaking', '#breaking', 'The most immediate stories, with chat'],
-    ['Radar', '#radar', 'Chart, levels, positioning and confluence'], ['Markets', '#markets', 'Order book, trades and every market'], ['Status', '#status', 'Where every number comes from']
+    ['Radar', '#radar', 'Chart, levels, positioning and confluence'], ['Markets', '#markets', 'Order book, trades and every market'], ['My panel', '#panel', 'Your own feed of X accounts'], ['Status', '#status', 'Where every number comes from']
   ];
   function buildPalette() {
     var items = PAGES.map(function (p) { return { kind: 'Page', text: p[0], sub: p[2], go: function () { location.hash = p[1]; } }; });

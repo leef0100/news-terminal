@@ -22,6 +22,7 @@
     <a href="#breaking" data-view="breaking">Breaking <span id="breakingCount" class="count" hidden></span></a>
     <a href="#radar" data-view="radar">Radar</a>
     <a href="#markets" data-view="markets">Markets</a>
+    <a href="#panel" data-view="panel">My panel</a>
     <a href="#status" data-view="status">Status</a>
   </nav>
   <div class="status">
@@ -352,6 +353,39 @@
   </div>
 </section>
 
+<!-- MY PANEL -->
+<section id="view-panel" class="view" hidden>
+  <div class="breakHead">
+    <div>
+      <p class="kicker">My panel</p>
+      <h1 class="display">Your people, in one feed</h1>
+    </div>
+    <p id="xpAt" class="muted"></p>
+  </div>
+  <div class="cols">
+    <main class="feed">
+      <p id="xpNotice" class="emptyBox notice" role="status" hidden></p>
+      <div id="xpPosts" class="stack"></div>
+      <p id="xpEmpty" class="emptyBox" hidden></p>
+    </main>
+    <aside class="detail flow" aria-label="Accounts in your panel">
+      <div class="stack">
+        <section class="card" aria-labelledby="xpTitle">
+          <div class="sideHead"><h2 id="xpTitle">Accounts</h2><span id="xpCount" class="muted small"></span></div>
+          <form id="xpForm" class="row">
+            <label for="xpInput" class="sr">X username to add</label>
+            <input id="xpInput" type="text" placeholder="@username" maxlength="16" autocomplete="off" autocapitalize="off" spellcheck="false">
+            <button type="submit" class="btn">Add</button>
+          </form>
+          <p id="xpErr" class="chatError" role="status"></p>
+          <ul id="xpList" class="xpList"></ul>
+          <p class="muted small">Your list is kept in this browser only. Pick an account to show just its posts; pick it again to show everyone.</p>
+        </section>
+      </div>
+    </aside>
+  </div>
+</section>
+
 <!-- STATUS -->
 <section id="view-status" class="view" hidden>
   <div class="breakHead">
@@ -404,6 +438,7 @@
 <script src="radar.js"></script>
 <script src="markets.js"></script>
 <script src="desk.js"></script>
+<script src="panel.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

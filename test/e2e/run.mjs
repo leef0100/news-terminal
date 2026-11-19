@@ -159,7 +159,7 @@ const rd = await p.evaluate(() => ({
   fh: document.querySelectorAll('#rFundHist .fh').length, live: document.querySelector('#rLiveText').textContent,
   page: document.querySelector('#view-radar').innerText
 }));
-check('radar: confluence gives a plain-language reading with an explanation for every factor', /lean|mixed/i.test(rd.verdict) && rd.why >= 8, rd.verdict);
+check('radar: confluence gives a plain-language reading with an explanation for every factor', /lean|disagree|No clear/i.test(rd.verdict) && rd.why >= 8, rd.verdict);
 check('radar: levels, timeframes, market map and funding history are filled in', rd.now === 1 && rd.tf === 5 && rd.tiles === 6 && rd.fh > 100 && rd.toggles === 9);
 check('radar: demo prices are labelled as invented', /invented/.test(rd.live));
 check('radar: says what it is not', /not advice/i.test(rd.page) && /model/i.test(rd.page) && !/\b(buy|sell) now\b|guarantee/i.test(rd.page));
@@ -217,6 +217,21 @@ const story = await p.$eval('#palList .palItem.on .palKind', (n) => n.textConten
 await p.keyboard.press('Enter');
 await p.waitForFunction(() => location.hash.startsWith('#n-') || !document.querySelector('#detail').hidden, { timeout: 8000 });
 check('search: finds a headline and opens the story', story === 'Story');
+// ----- my panel -----
+await p.goto(BASE + '/#panel');
+await p.waitForSelector('#xpEmpty:not([hidden])');
+const addHandle = async (v) => { await p.$eval('#xpInput', (n, val) => { n.value = val; }, v); await p.evaluate(() => document.querySelector('#xpForm button').click()); await sleep(150); };
+await addHandle('@first_person'); await addHandle('https://x.com/SecondPerson/status/1'); await addHandle('first_person'); await addHandle('not a name');
+await p.waitForFunction(() => document.querySelectorAll('#xpPosts .xpPost').length === 2, { timeout: 8000 });
+const xpText = await p.$eval('#view-panel', (n) => n.innerText);
+check('panel: usernames can be added as @name or a pasted link, and bad or repeated ones are refused', (await p.$$('#xpList .xpAcct')).length === 2 && /2 of 20/.test(xpText) && /SecondPerson/.test(xpText));
+check('panel: demo shows labelled placeholders, never invented posts', /placeholders, not real posts/.test(xpText) && /Placeholder\. Posts from @/.test(xpText));
+await p.evaluate(() => document.querySelector('#xpList .xpPick').click()); await sleep(100);
+check('panel: picking an account shows only its posts', (await p.$$('#xpPosts .xpPost')).length === 1);
+await p.reload(); await p.waitForFunction(() => document.querySelectorAll('#xpList .xpAcct').length === 2, { timeout: 8000 });
+await p.evaluate(() => document.querySelector('#xpList .xpRemove').click()); await sleep(150);
+check('panel: the list is remembered and accounts can be removed', (await p.$$('#xpList .xpAcct')).length === 1);
+await p.evaluate(() => localStorage.removeItem('nt.xpanel'));
 await p.goto(BASE + '/#status');
 await p.waitForFunction(() => document.querySelectorAll('#stFeeds tr').length > 3 && document.querySelectorAll('#stVenues tr').length === 6, { timeout: 8000 });
 const stText = await p.$eval('#view-status', (n) => n.innerText);
@@ -295,7 +310,7 @@ await p.goto(BASE + '/#home'); await p.waitForSelector('.clip');
 check('home collage', (await p.$$('.clip')).length === 14);
 await sleep(500); await shot(p, 'home3');
 await p.setViewport({ width: 390, height: 844 });
-for (const v of ['home', 'news', 'breaking', 'radar', 'markets', 'status']) {
+for (const v of ['home', 'news', 'breaking', 'radar', 'markets', 'panel', 'status']) {
   await p.goto(BASE + '/#' + v); await sleep(700);
   check('phone ' + v + ' has no sideways scroll', !(await p.evaluate(() => document.documentElement.scrollWidth > innerWidth)));
   if (v === 'news') await shot(p, 'phone-news');

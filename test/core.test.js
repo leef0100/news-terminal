@@ -447,3 +447,75 @@ test('radar: funding is compared on each market\'s own settlement interval, and 
   assert.ok(!coin('BTC').openInterestFrom.includes('Bybit'));
   assert.equal(coin('BTC').coinbasePremiumVs, 'Binance futures');
 });
+
+test('x panel: shares accounts between viewers, asks only for new posts, and stops at its limits', async () => {
+  const { createXPanel, validHandle } = await import('../src/xpanel.js');
+  assert.ok(validHandle('elonmusk') && validHandle('a_b_1') && !validHandle('bad-name') && !validHandle('') && !validHandle('x'.repeat(16)) && !validHandle('a,b'));
+
+  // No key: says so, and shows nothing as a post.
+  const off = createXPanel({}).panel(['someone']);
+  assert.equal(off.enabled, false);
+  assert.deepEqual(off.posts, []);
+  // Demo: placeholders only, never worded as something the person said.
+  const demo = createXPanel({ demo: true }).panel(['Someone', 'someone', 'bad-name']);
+  assert.equal(demo.posts.length, 1, 'one account, however it was typed');
+  assert.ok(demo.posts[0].placeholder && /^Placeholder\./.test(demo.posts[0].text));
+
+  let t = Date.UTC(2026, 0, 1, 12);
+  const calls = [];
+  let next = [{ id: '1002', text: 'second', created_at: '2026-01-01T11:59:00Z' }, { id: '1001', text: 'first', created_at: '2026-01-01T11:00:00Z' }];
+  let status = 200;
+  const fetchImpl = async (url, init) => {
+    calls.push(String(url));
+    assert.equal(init.headers.authorization, 'Bearer k');
+    if (status !== 200) return { ok: false, status, headers: { get: () => String((t + 120000) / 1000) }, json: async () => ({}) };
+    if (String(url).includes('/users/by?')) return { ok: true, status: 200, json: async () => ({ data: [{ id: '42', username: 'Alice', name: 'Alice A' }] }) };
+    const out = next; next = [];
+    return { ok: true, status: 200, json: async () => ({ data: out }) };
+  };
+  const x = createXPanel({ token: 'k', fetchImpl, now: () => t, log: { warn() {} }, dailyPosts: 3, tickMs: 1e9 });
+  let p = x.panel(['alice', 'ghost']);
+  assert.deepEqual(p.accounts.map((a) => a.state), ['waiting', 'waiting']);
+  await x.tick();
+  p = x.panel(['ALICE', 'ghost']);
+  assert.deepEqual(p.accounts.map((a) => [a.handle, a.state]), [['Alice', 'ok'], ['ghost', 'notfound']]);
+  assert.deepEqual(p.posts.map((q) => q.text), ['second', 'first'], 'newest first');
+  assert.equal(p.posts[0].url, 'https://x.com/Alice/status/1002');
+  assert.equal(calls.filter((c) => c.includes('/users/by?')).length, 1, 'names are looked up once, together');
+
+  // The next check asks only for posts after the newest one held.
+  t += 30000;
+  next = [{ id: '1003', text: 'third', created_at: '2026-01-01T12:00:20Z' }];
+  await x.tick();
+  assert.match(calls.at(-1), /since_id=1002/);
+  assert.equal(x.panel(['alice']).posts[0].text, 'third');
+  // Three posts read: the day's limit. Nothing more is fetched until tomorrow.
+  const before = calls.length;
+  t += 30000;
+  await x.tick();
+  assert.equal(calls.length, before);
+  assert.equal(x.panel(['alice']).paused, 'budget');
+  t += 86400000;
+  x.panel(['alice']); // someone is still watching
+  await x.tick();
+  assert.equal(calls.length, before + 1, 'a new day, a new allowance');
+
+  // Told to slow down: waits for the time given.
+  status = 429; t += 30000;
+  await x.tick();
+  const after = calls.length;
+  t += 30000; status = 200;
+  await x.tick();
+  assert.equal(calls.length, after, 'still waiting');
+  assert.equal(x.panel(['alice']).paused, 'rate');
+  t += 120000;
+  await x.tick();
+  assert.equal(calls.length, after + 1);
+
+  // An account nobody asks about any more stops being checked.
+  t += 700000;
+  const idle = calls.length;
+  await x.tick();
+  assert.equal(calls.length, idle);
+  x.stop();
+});
