@@ -490,3 +490,22 @@ a.alsoRow:hover .alsoText { text-decoration: underline; }
 .tabs a { padding: 0 13px; white-space: nowrap; }
 a.live { text-decoration: none; min-height: 36px; padding: 0 6px; border-radius: 999px; }
 a.live:hover { color: var(--text); }
+
+/* ---------- heatmaps ---------- */
+.tmBox { position: relative; height: clamp(300px, 46vh, 460px); border-radius: 12px; overflow: hidden; background: var(--bar); }
+.tm { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; padding: 2px; border: 1px solid var(--panel); color: var(--text); overflow: hidden; line-height: 1.1; font: inherit; }
+.tm.strong { color: #fff; }
+.tm b { font-weight: 700; }
+.tm:hover, .tm:focus-visible { outline: 2px solid var(--text); outline-offset: -2px; z-index: 1; }
+.tm.on { outline: 3px solid var(--text); outline-offset: -3px; z-index: 1; }
+.tmLegend, .lhLegend { display: flex; align-items: center; gap: 10px; margin-top: 10px; font-size: 12px; color: var(--text-3); }
+.tmScale { flex: 0 1 180px; min-width: 60px; height: 10px; border-radius: 999px; background: linear-gradient(90deg, rgba(217, 83, 74, .92), rgba(217, 83, 74, .14) 49%, rgba(18, 160, 92, .14) 51%, rgba(18, 160, 92, .92)); }
+.lhWrap { position: relative; height: clamp(320px, 52vh, 520px); border-radius: 12px; overflow: hidden; background: #170A36; }
+.lhWrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: pan-y; }
+.lhBar { flex: 0 1 200px; min-width: 60px; height: 10px; border-radius: 999px; }
+.lhRead { margin-top: 8px; min-height: 1.4em; color: var(--text-2); white-space: normal; }
+.heat td { font-weight: 600; }
+.tmLegend, .lhLegend { flex-wrap: wrap; }
+#lhLev { flex-wrap: wrap; }
+@media (max-width: 520px) { #rIntervals { flex: 1 1 100%; } #rIntervals button { flex: 1; padding: 0 4px; } }
+@media (max-width: 620px) { #view-radar .tools { flex-wrap: wrap; max-width: 100%; min-width: 0; } #view-radar .tools .seg { flex: 1 1 100%; } #view-radar .tools .seg button { flex: 1; min-width: 0; } }

@@ -2,7 +2,7 @@
 // Every call goes through a short-lived cache so many browsers share one upstream request.
 
 const API = 'https://api.hyperliquid.xyz/info';
-export const INTERVALS = { '5m': 300000, '15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000 };
+export const INTERVALS = { '5m': 300000, '15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000, '1w': 604800000, '1M': 2592000000 };
 export const validCoin = (c) => typeof c === 'string' && /^[A-Za-z0-9:]{1,20}$/.test(c);
 
 // What each kind of request costs against the exchange's allowance of 1,200 a minute per

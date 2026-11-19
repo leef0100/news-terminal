@@ -105,7 +105,7 @@ export function demoMarketFetch(now = Date.now) {
     }
     if (body.type === 'candleSnapshot') {
       const { coin, interval, startTime, endTime } = body.req;
-      const step = { '5m': 3e5, '15m': 9e5, '1h': 36e5, '4h': 144e5, '1d': 864e5 }[interval] || 9e5;
+      const step = { '5m': 3e5, '15m': 9e5, '1h': 36e5, '4h': 144e5, '1d': 864e5, '1w': 6048e5, '1M': 2592e6 }[interval] || 9e5;
       const out = [];
       for (let s = Math.ceil(startTime / step) * step; s < Math.min(endTime, t); s += step) {
         const end = Math.min(s + step, t);

@@ -155,7 +155,7 @@ await p.waitForFunction(() => document.querySelectorAll('#cFactors .factor').len
 const rd = await p.evaluate(() => ({
   verdict: document.querySelector('#cVerdict').textContent, why: document.querySelectorAll('#cFactors details').length,
   toggles: document.querySelectorAll('#rToggles .tgl').length, now: document.querySelectorAll('#rLevels .lv.now').length,
-  tf: document.querySelectorAll('#rTf tr').length, tiles: document.querySelectorAll('#rMap .tile').length,
+  tf: document.querySelectorAll('#rTf tr').length, tiles: document.querySelectorAll('#rMap .tm').length,
   fh: document.querySelectorAll('#rFundHist .fh').length, live: document.querySelector('#rLiveText').textContent,
   page: document.querySelector('#view-radar').innerText
 }));
@@ -182,10 +182,23 @@ check('radar: warns when the stop sits beyond liquidation', /at most 40x/.test(a
 await p.click('#psUsePrice'); await p.click('#psUseSupport'); await sleep(150);
 check('radar: entry and stop can be filled from the chart levels', Number(await p.$eval('#psEntry', (n) => n.value)) > Number(await p.$eval('#psStop', (n) => n.value)) && Number(await p.$eval('#psStop', (n) => n.value)) > 0);
 // Another market and candle size.
-await p.evaluate(() => [...document.querySelectorAll('#rMap .tile')].find((t) => /ETH/.test(t.textContent)).click());
+await p.evaluate(() => [...document.querySelectorAll('#rMap .tm')].find((t) => /ETH/.test(t.textContent)).click());
 await p.waitForFunction(() => /^ETH/.test(document.querySelector('#rTitle').textContent) && document.querySelectorAll('#rLevels .lv').length > 3, { timeout: 10000 });
 await p.evaluate(() => [...document.querySelectorAll('#rIntervals button')].find((x) => x.textContent === '4h').click());
 await p.waitForFunction(() => /4h/.test(document.querySelector('#rTitle').textContent), { timeout: 10000 });
+// The liquidation heatmap paints, reads out a level under the pointer, and follows the leverage chosen.
+const lhInk = () => p.$eval('#lhCanvas', (c) => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let bright = 0; for (let i = 0; i < d.length; i += 16) if (d[i + 1] > 120) bright++; return bright; });
+const lhAll = await lhInk();
+await p.evaluate(() => [...document.querySelectorAll('#lhLev .tgl')].filter((b) => b.textContent !== '100x').forEach((b) => b.click())); await sleep(300);
+const lhOne = await lhInk();
+const lhBox = await (await p.$('#lhCanvas')).boundingBox();
+await p.evaluate(() => document.querySelector('#lhCanvas').scrollIntoView({ block: 'center' })); await sleep(200);
+const lhNow = await (await p.$('#lhCanvas')).boundingBox();
+await p.mouse.move(lhNow.x + lhNow.width * 0.6, lhNow.y + lhNow.height * 0.5); await sleep(150);
+check('radar: liquidation heatmap draws, changes with leverage, and reads out a level', lhAll > 500 && lhOne !== lhAll && /strength \d+ of 100/.test(await p.$eval('#lhRead', (n) => n.textContent)) && /model/i.test(await p.$eval('section[aria-labelledby="lhTitle"]', (n) => n.textContent)), lhAll + ' -> ' + lhOne);
+await p.evaluate(() => [...document.querySelectorAll('#rIntervals button')].find((x) => x.textContent === '1w').click());
+await p.waitForFunction(() => /1w/.test(document.querySelector('#rTitle').textContent) && /year/.test(document.querySelector('#rChartNote').textContent), { timeout: 10000 });
+check('radar: weekly candles load, with VWAP restarting each year', true);
 check('radar: switching market and candle size reloads the workspace', /ETH/.test(await p.$eval('#fhTitle', (n) => n.textContent)));
 await p.evaluate(() => { localStorage.removeItem('nt.rcoin'); localStorage.removeItem('nt.rint'); });
 await p.goto(BASE + '/#markets'); await p.waitForSelector('#book .bookRow.bid'); await p.waitForSelector('#mChart canvas');

@@ -230,6 +230,16 @@
           <p id="rChartNote" class="muted small"></p>
           <p class="muted small">Market data from Hyperliquid's public API. Charts by <a href="https://www.tradingview.com/" target="_blank" rel="noopener noreferrer">TradingView Lightweight Charts</a>.</p>
         </section>
+        <section class="card" aria-labelledby="lhTitle">
+          <div class="sideHead padHead">
+            <h2 id="lhTitle">Liquidation heatmap</h2>
+            <div id="lhLev" class="toggles" role="group" aria-label="Leverage included"></div>
+          </div>
+          <div class="lhWrap"><canvas id="lhCanvas" role="img" aria-label="Liquidation heatmap, a model"></canvas></div>
+          <div class="lhLegend"><span>Fewer</span><span id="lhBar" class="lhBar" aria-hidden="true"></span><span>More modelled liquidations</span></div>
+          <p id="lhRead" class="mono small lhRead" role="status">Move over the map, or tap it, to read a level.</p>
+          <p class="muted small">A model, not real positions. Brightness shows where positions opened at past prices, at the leverage chosen, would be closed out; a band ends when price reaches it. Built from traded volume on this chart's candles.</p>
+        </section>
         <section class="card" aria-labelledby="cTitle">
           <div class="sideHead">
             <h2 id="cTitle">Confluence</h2>
@@ -276,10 +286,14 @@
   </div>
 
   <div class="pad">
-    <div class="twoCol">
+    <div class="stack">
       <section class="card" aria-labelledby="mapTitle">
-        <div class="sideHead"><h2 id="mapTitle">Market heatmap</h2><span class="muted small">24-hour change, sized by volume</span></div>
-        <div id="rMap" class="mmap"></div>
+        <div class="sideHead padHead">
+          <h2 id="mapTitle">Market heatmap</h2>
+          <div class="row"><span class="muted small">24-hour change. Tile size:</span><div id="rMapBy" class="seg" role="group" aria-label="Tile size"></div></div>
+        </div>
+        <div id="rMap" class="tmBox"></div>
+        <div class="tmLegend" aria-hidden="true"><span class="mono">-8%</span><span class="tmScale"></span><span class="mono">+8%</span></div>
       </section>
       <section class="card" aria-labelledby="fundTitle">
         <div class="sideHead"><h2 id="fundTitle">Funding</h2><span class="muted small">Yearly rate. Green: longs pay. Coral: shorts pay.</span></div>
@@ -443,6 +457,7 @@
 <script src="/vendor/lightweight-charts.js"></script>
 <script src="indicators.js"></script>
 <script src="hl.js"></script>
+<script src="heatmap.js"></script>
 <script src="wallet.js"></script>
 <script src="radar.js"></script>
 <script src="markets.js"></script>

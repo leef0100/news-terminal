@@ -9,7 +9,7 @@ window.HL = (function () {
   'use strict';
   var HTTP = window.HALFTONE_HL_HTTP || 'https://api.hyperliquid.xyz/info';
   var WS = window.HALFTONE_HL_WS || 'wss://api.hyperliquid.xyz/ws';
-  var STEP = { '5m': 300000, '15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000 };
+  var STEP = { '5m': 300000, '15m': 900000, '1h': 3600000, '4h': 14400000, '1d': 86400000, '1w': 604800000, '1M': 2592000000 };
   var forced = Boolean(window.HALFTONE_HL_HTTP || window.HALFTONE_HL_WS); // tests point these at a stand-in
   var demo = null;        // unknown until the market list has been loaded once
   var directOffUntil = 0; // after a failed direct call, use our server for a while
@@ -180,7 +180,7 @@ window.HL = (function () {
   function chartTime(getInterval) {
     var two = function (n) { return String(n).padStart(2, '0'); };
     var parts = function (sec) {
-      var d = new Date(sec * 1000), utc = getInterval() === '1d';
+      var d = new Date(sec * 1000), utc = ['1d', '1w', '1M'].indexOf(getInterval()) !== -1;
       return utc
         ? { y: d.getUTCFullYear(), mo: d.getUTCMonth(), d: d.getUTCDate(), h: 0, mi: 0, daily: true }
         : { y: d.getFullYear(), mo: d.getMonth(), d: d.getDate(), h: d.getHours(), mi: d.getMinutes(), daily: false };

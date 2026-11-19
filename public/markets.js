@@ -7,7 +7,7 @@
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
-  var INTERVALS = ['5m', '15m', '1h', '4h', '1d'];
+  var INTERVALS = ['5m', '15m', '1h', '4h', '1d', '1w', '1M'];
   var st = {
     coin: 'BTC', interval: '15m', markets: [], demo: false, active: false,
     timers: [], chart: null, candles: null, volume: null, fitted: '', last: null,

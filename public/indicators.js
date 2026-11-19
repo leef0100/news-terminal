@@ -70,11 +70,12 @@ window.Indicators = (function () {
   // Where the average-price line restarts: each UTC day for short candles, each week for
   // 4-hour candles, each month for daily candles.
   function anchorOf(interval) {
+    if (interval === '1w' || interval === '1M') return function (t) { return new Date(t * 1000).getUTCFullYear(); };
     if (interval === '1d') return function (t) { var d = new Date(t * 1000); return d.getUTCFullYear() * 12 + d.getUTCMonth(); };
     if (interval === '4h') return function (t) { return Math.floor((t / 86400 + 3) / 7); }; // weeks starting Monday
     return function (t) { return Math.floor(t / 86400); };
   }
-  function anchorName(interval) { return interval === '1d' ? 'month' : interval === '4h' ? 'week' : 'day'; }
+  function anchorName(interval) { return interval === '1w' || interval === '1M' ? 'year' : interval === '1d' ? 'month' : interval === '4h' ? 'week' : 'day'; }
 
   // Volume-weighted average price since the anchor: the average price actually paid.
   function vwap(candles, interval) {

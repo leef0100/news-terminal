@@ -11,6 +11,8 @@
   var $ = function (id) { return document.getElementById(id); };
   var I = window.Indicators, HL = window.HL, T = HL.theme;
   var INTERVALS = ['15m', '1h', '4h', '1d'];
+  // The chart can also show weeks and months; the readings table stays on the four above.
+  var CHART_INTERVALS = INTERVALS.concat(['1w', '1M']);
   var HEAT_VENUES = ['Binance', 'Bybit', 'Hyperliquid'];
   var LINES = [
     { id: 'ema9', label: 'EMA 9', color: T.ema9, period: 9 },
@@ -29,13 +31,13 @@
     onPage: false, active: false, coin: 'BTC', interval: '1h', markets: [], snap: null,
     c: {}, depth: null, funding: [], profile: null, walls: [], levels: [], liq: null, conf: null,
     chart: null, candles: null, volume: null, lines: {}, priceLines: [], fitted: '', shown: '',
-    stream: null, live: false, timers: [], raf: null, sig: '', dirty: false, loadId: 0, run: 0, sigs: {}, tf: {}, coinTimer: null,
+    stream: null, live: false, timers: [], raf: null, sig: '', dirty: false, loadId: 0, run: 0, sigs: {}, tf: {}, coinTimer: null, mapBy: 'oi', lhOn: { 10: true, 25: true, 50: true, 100: true }, lhGrid: null, lhGeo: null, lhList: null,
     on: { ema9: false, ema21: true, ema50: true, ema200: true, vwap: true, levels: true, profile: true, book: true, liq: false }
   };
   try {
     st.coin = localStorage.getItem('nt.rcoin') || 'BTC';
     var iv = localStorage.getItem('nt.rinterval');
-    if (INTERVALS.indexOf(iv) !== -1) st.interval = iv;
+    if (CHART_INTERVALS.indexOf(iv) !== -1) st.interval = iv;
     var saved = JSON.parse(localStorage.getItem('nt.rlayers') || 'null');
     if (saved && typeof saved === 'object') Object.keys(st.on).forEach(function (k) { if (typeof saved[k] === 'boolean') st.on[k] = saved[k]; });
   } catch (e) { /* storage unavailable */ }
@@ -111,8 +113,9 @@
   function renderIntervals() {
     var box = $('rIntervals');
     box.textContent = '';
-    INTERVALS.forEach(function (v) {
+    CHART_INTERVALS.forEach(function (v) {
       var b = el('button', v === st.interval ? 'on' : '', v);
+      b.setAttribute('aria-label', { '15m': '15 minute', '1h': '1 hour', '4h': '4 hour', '1d': 'Daily', '1w': 'Weekly', '1M': 'Monthly' }[v] + ' candles');
       b.type = 'button';
       b.setAttribute('aria-pressed', String(v === st.interval));
       b.addEventListener('click', function () {
@@ -374,6 +377,7 @@
     renderLevels();
     renderTf();
     renderSize();
+    renderLiqMap();
     st.dirty = true;
   }
 
@@ -463,27 +467,72 @@
   }
 
   // ---------- market heatmap ----------
+  // Every market as a tile: area by open interest or volume, colour by the day's move.
   function renderMap() {
-    keepFocus('map:', function () {
-      var box = $('rMap');
-      box.textContent = '';
-      var list = st.markets.slice(0, 28), maxV = list.length ? list[0].volume24hUsd : 1;
-      list.forEach(function (m) {
-        var b = el('button', 'tile' + (m.coin === st.coin ? ' on' : ''));
-        b.setAttribute('aria-pressed', String(m.coin === st.coin));
+    var by = st.mapBy === 'vol' ? 'volume24hUsd' : 'openInterestUsd';
+    var seg = $('rMapBy');
+    if (changed('mapBy', st.mapBy)) {
+      seg.textContent = '';
+      [['oi', 'Open interest'], ['vol', 'Volume']].forEach(function (o) {
+        var b = el('button', st.mapBy === o[0] ? 'on' : '', o[1]);
         b.type = 'button';
-        b.dataset.fk = 'map:' + m.coin;
-        // Area follows volume on a compressed scale, so small markets stay readable.
-        b.style.flexGrow = String(Math.max(1, Math.round(Math.sqrt(m.volume24hUsd / maxV) * 12)));
-        var a = Math.min(1, Math.abs(m.change24hPct) / 8) * 0.3 + 0.06;
-        b.style.background = m.change24hPct >= 0 ? 'rgba(' + window.HL.theme.upRgb + ', ' + a.toFixed(2) + ')' : 'rgba(' + window.HL.theme.downRgb + ', ' + a.toFixed(2) + ')';
-        b.appendChild(el('b', null, m.coin));
-        b.appendChild(el('span', 'mono', signed(m.change24hPct, 1)));
-        b.title = m.coin + ': $' + px(m.mark) + ', volume ' + money(m.volume24hUsd) + ', open interest ' + money(m.openInterestUsd);
-        b.addEventListener('click', function () { setCoin(m.coin); window.scrollTo({ top: 0, behavior: 'smooth' }); });
-        box.appendChild(b);
+        b.dataset.fk = 'mapby-' + o[0];
+        b.setAttribute('aria-pressed', String(st.mapBy === o[0]));
+        b.addEventListener('click', function () { st.mapBy = o[0]; remember('nt.rmapby', o[0]); renderMap(); refocus('mapby-' + o[0]); });
+        seg.appendChild(b);
       });
+    }
+    var box = $('rMap');
+    var items = st.markets.slice().sort(function (a, b) { return b[by] - a[by]; }).slice(0, 40).map(function (m) {
+      return { key: m.coin, label: m.coin, size: m[by], changePct: m.change24hPct,
+        title: m.coin + ': $' + px(m.mark) + ', ' + signed(m.change24hPct, 1) + ' in 24 hours, open interest ' + money(m.openInterestUsd) + ', volume ' + money(m.volume24hUsd) };
     });
+    if (!changed('map', [box.clientWidth, st.coin, by, items.map(function (x) { return [x.key, Math.round(x.size / 1e5), x.changePct.toFixed(1)]; })])) return;
+    keepFocus('map:', function () {
+      window.Heatmaps.treemap(box, items, { up: T.upRgb, down: T.downRgb, limit: 8, selected: st.coin, fk: 'map:', onPick: function (coin) { setCoin(coin); window.scrollTo({ top: 0, behavior: 'smooth' }); } });
+    });
+  }
+
+  // The liquidation heatmap: price against time. A model; see heatmap.js.
+  var LH_LEVS = [10, 25, 50, 100];
+  function renderLiqLevs() {
+    var box = $('lhLev');
+    box.textContent = '';
+    LH_LEVS.forEach(function (x) {
+      var b = el('button', 'tgl' + (st.lhOn[x] ? ' on' : ''), x + 'x');
+      b.type = 'button';
+      b.dataset.fk = 'lh-' + x;
+      b.setAttribute('aria-pressed', String(Boolean(st.lhOn[x])));
+      b.addEventListener('click', function () {
+        st.lhOn[x] = !st.lhOn[x];
+        if (!LH_LEVS.some(function (v) { return st.lhOn[v]; })) st.lhOn[x] = true; // at least one
+        renderLiqLevs(); refocus('lh-' + x); renderLiqMap(true);
+      });
+      box.appendChild(b);
+    });
+  }
+  function renderLiqMap(force) {
+    var all = st.c[st.interval];
+    if (!all || all.length < 5) return;
+    var list = all.slice(-220), levs = LH_LEVS.filter(function (x) { return st.lhOn[x]; });
+    var cv = $('lhCanvas'), lastC = list[list.length - 1];
+    if (!force && !changed('lh', [st.coin, st.interval, cv.parentNode.clientWidth, list.length, lastC.time, px(lastC.close), levs])) return;
+    st.lhList = list;
+    st.lhGrid = window.Heatmaps.liquidationGrid(list, levs, 110);
+    var daily = ['1d', '1w', '1M'].indexOf(st.interval) !== -1;
+    st.lhGeo = window.Heatmaps.drawLiquidation(cv, list, st.lhGrid, {
+      price: px,
+      time: function (sec) { var d = new Date(sec * 1000); return daily ? d.getUTCDate() + '/' + (d.getUTCMonth() + 1) + '/' + String(d.getUTCFullYear()).slice(2) : d.getDate() + '/' + (d.getMonth() + 1) + ' ' + String(d.getHours()).padStart(2, '0') + ':00'; }
+    });
+    cv.setAttribute('aria-label', st.coin + ' ' + st.interval + ' liquidation heatmap, a model: brighter bands mark prices where more leveraged positions would be closed out.');
+  }
+  function readLiqMap(e) {
+    var cv = $('lhCanvas'), r = cv.getBoundingClientRect();
+    var pt = e.touches && e.touches[0] ? e.touches[0] : e;
+    var hit = window.Heatmaps.probe(st.lhGrid, st.lhGeo, st.lhList || [], pt.clientX - r.left, pt.clientY - r.top);
+    if (!hit) return;
+    $('lhRead').textContent = new Date(hit.time * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) +
+      '  ·  level ' + px(hit.lo) + ' to ' + px(hit.hi) + '  ·  ' + signed((hit.lo + hit.hi) / 2 / hit.close * 100 - 100, 1) + ' from that candle\'s close  ·  strength ' + hit.strength + ' of 100';
   }
 
   // ---------- funding ----------
@@ -778,6 +827,7 @@
     setNote('wait');
     renderIntervals();
     renderToggles();
+    renderLiqLevs();
     renderSize();
     watchHeat();
     loadMarkets().then(function () {
@@ -831,6 +881,13 @@
   }
   $('psUseSupport').addEventListener('click', function () { stopAt('below'); });
   $('psUseResist').addEventListener('click', function () { stopAt('above'); });
+
+  $('lhCanvas').addEventListener('mousemove', readLiqMap);
+  $('lhCanvas').addEventListener('touchstart', readLiqMap, { passive: true });
+  $('lhCanvas').addEventListener('touchmove', readLiqMap, { passive: true });
+  $('lhBar').style.background = window.Heatmaps.legendCss();
+  window.addEventListener('resize', function () { if (st.active) { renderMap(); renderLiqMap(); } });
+  try { if (localStorage.getItem('nt.rmapby') === 'vol') st.mapBy = 'vol'; } catch (e) { /* ignore */ }
 
   // Lets the search box open a market here.
   window.HalftoneRadar = {
