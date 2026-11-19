@@ -1,7 +1,8 @@
 # Readiness
 
 What has been checked, what has not, and what to do before this is shown to investors.
-Written 18 November 2026.
+Written 18 November 2026, updated 19 November 2026 for stocks, calendars, private markets,
+the X columns and deployment.
 
 ## The short version
 
@@ -24,8 +25,17 @@ up has been fixed. Demo mode is clearly marked on every page and all of its data
    funding and the order book against Hyperliquid's own site. The chart note should read
    "Live from Hyperliquid".
 5. **Tokens.** Open a crypto story and check the matching tokens against DexScreener.
-6. **My panel.** Needs an X API key (`X_BEARER_TOKEN=... npm start`). Add two accounts and
-   confirm their posts appear and that the links open the right posts.
+6. **My panel.** While signed in to X in the same browser, add two accounts, press "Show
+   posts from X" and confirm each column fills with that account's posts. Then sign out of X
+   and confirm the page explains the empty columns.
+7. **Stocks.** Start with `SEC_USER_AGENT="Halftone you@yourdomain.com" npm start`. Open three
+   companies you know well (one with a September year-end, one bank, one recent IPO) and
+   compare revenue, net income, EPS, total assets and operating cash flow for the last two
+   years and two quarters against the company's own 10-K and 10-Q. Any mismatch is a bug to
+   report before launch. Check the yield curve against treasury.gov, and that every stock
+   price says "perpetual price on Hyperliquid" unless a keyed price source is set.
+8. **Calendar and Private.** Check the next Federal Reserve meeting date against the Fed's
+   site, and open three Form D rows and three pipeline rows through to their SEC filings.
 
 ## What has been verified
 
@@ -37,12 +47,19 @@ up has been fixed. Demo mode is clearly marked on every page and all of its data
 | Server | API tests, security headers, rate limits, and two web servers plus an ingest worker sharing state through a real Redis |
 | Throughput on one machine | About 8,500 feed requests a second; 8,000 live connections in about 115 MB; one story to all of them in 130 ms |
 | Exchange API shapes | Compared field by field with official documentation for Hyperliquid, Binance, Bybit and Coinbase |
-| Independent review | Four separate reviews (whole app; trading maths; Radar front end and security; sources against the web). Most findings were fixed; those left open are listed below |
+| Company statements | Unit tests on hand-built filings: non-calendar and 52/53-week years, restatements, overlapping periods, derived fourth quarters, tag changes, non-USD filers, per-share figures never summed |
+| Independent review | Five separate reviews (whole app; trading maths; Radar front end and security; sources against the web; the stocks module). Most findings were fixed; those left open are listed below |
 
 ## What has not been verified
 
 - **Any live call to an outside service** from this code: news feeds, Hyperliquid, Binance,
   Bybit, Coinbase, DexScreener, X.
+- **Everything behind Stocks, Calendar and Private, live.** The SEC, Treasury, FRED, Finnhub,
+  Twelve Data and Hyperliquid equity adapters were written against documentation and, in
+  places, from memory (the SEC filing feeds and the Treasury file layout in particular).
+  `docs/TRADFI-SOURCES.md` lists each one. Expect some to need a fix on first contact.
+- **X's embedded timelines.** Coded to X's published embed interface; never loaded from here.
+- **The Render blueprint.** `render.yaml` follows Render's documented format; never deployed.
 - **The 18 news feed addresses, directly.** Fifteen were confirmed alive through third-party
   feed readers that poll the same addresses; the SEC and ECB feeds were fetched directly;
   the Federal Reserve address is the one listed on its own feeds page. None was fetched by
@@ -73,8 +90,20 @@ up has been fixed. Demo mode is clearly marked on every page and all of its data
   weighting. The page says which venues a figure comes from.
 - **Volume by price** spreads each candle's volume evenly across its range, an approximation.
 - **Liquidation estimate** is for an isolated position before fees and funding.
-- **X posts arrive by polling**, typically within a minute. Instant delivery needs X's
-  streaming product.
+- **Stock prices have no free official source.** With no key, prices are Hyperliquid
+  perpetuals for about 30 large shares and a few indexes, labelled as such; they track the
+  share but are not its exchange price, and most companies show no price at all. A real
+  equities product needs a licensed feed. Twelve Data's free plan does not allow public
+  display.
+- **Statements come from each company's own XBRL tags.** Banks, insurers and foreign filers
+  will have gaps, shown as dashes. Share counts and EPS are not adjusted for later splits.
+- **Private markets means SEC filings**: Form D notices and registration statements. It is
+  not valuations, cap tables or a full record of private deals; that data is sold by
+  PitchBook, Crunchbase and others.
+- **Earnings dates, IPO dates and macro figures need free keys** (Finnhub, FRED). Without
+  them the calendar shows central-bank dates and filings only, and says what is not connected.
+- **X columns need the viewer signed in to X**, show one account per column, and refresh on
+  reload. A single merged, instant feed needs X's paid service.
 - **Chat has no accounts or moderation.** Do not open it to the public as is.
 - **Radar and Markets cover Hyperliquid perpetuals.** Spot markets, other exchanges' order
   books, options and on-chain data are not included.
@@ -94,6 +123,6 @@ up has been fixed. Demo mode is clearly marked on every page and all of its data
 
 ## For the pitch
 
-Safe to say: it is a working product with a tested core, a clear architecture for scale, and
-an honest status page. Not safe to say yet: that the data is verified live, that it is the
+Safe to say: it is a working product covering crypto, stocks and private-market filings,
+with a tested core, a clear architecture for scale, and an honest status page. Not safe to say yet: that the data is verified live, that it is the
 fastest news source, or that it has been load tested for a million users.
