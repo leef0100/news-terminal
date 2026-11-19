@@ -208,7 +208,7 @@
       <div id="rIntervals" class="seg" role="group" aria-label="Candle size"></div>
     </div>
   </div>
-  <p id="radarState" class="emptyBox radarState">Loading the market…</p>
+  <p id="radarState" class="emptyBox radarState" role="status">Loading the market…</p>
 
   <div class="cols">
     <main class="feed">
@@ -216,11 +216,11 @@
         <section class="card chartCard" aria-labelledby="rTitle">
           <div class="row between">
             <h2 id="rTitle">Chart</h2>
-            <p id="rLive" class="liveNote"><span class="dot" aria-hidden="true"></span><span id="rLiveText">Connecting…</span></p>
+            <p id="rLive" class="liveNote" role="status"><span class="dot" aria-hidden="true"></span><span id="rLiveText">Connecting…</span></p>
           </div>
           <div id="rToggles" class="toggles" role="group" aria-label="Chart overlays"></div>
           <div class="chartWrap">
-            <div id="rChart" class="chart tall"></div>
+            <div id="rChart" class="chart tall" role="img" aria-label="Price chart"></div>
             <canvas id="rHeat" class="heatLayer" aria-hidden="true"></canvas>
           </div>
           <p id="rChartNote" class="muted small"></p>

@@ -144,6 +144,19 @@ These are single-machine numbers on weak hardware, useful for sizing, not proof 
    through free public endpoints with their own limits and terms. At scale, get agreements
    or paid data.
 
+10. **My panel is per server.** Each web server polls X for the accounts its own viewers
+    follow, so several servers would each pay to read the same account. Before running more
+    than one, move the polling into the ingest worker and share results through Redis, as
+    the news feed does. At 300 accounts the checking interval stretches to several minutes.
+11. **Market history depends on browsers reaching the exchange.** Each browser fetches
+    candles from Hyperliquid directly. If that is blocked (a network that filters it, or the
+    exchange refusing cross-site requests), every viewer falls back to this server, whose
+    allowance covers a few dozen distinct charts a minute. A paid data feed or a caching
+    tier in front of the exchange removes that ceiling.
+12. **Binance and Bybit refuse US servers.** Bybit documents it and Binance is reported to.
+    Hosted in the US, Radar's long/short split has no source and funding and open interest
+    come from Hyperliquid alone. Host the ingest outside the US or license the data.
+
 ## Settings
 
 | Setting | Meaning | Default |
@@ -156,3 +169,5 @@ These are single-machine numbers on weak hardware, useful for sizing, not proof 
 | `TRUST_PROXY` | Number of proxies in front (1, 2, …), for the real client address | off |
 | `FRAME_ANCESTORS` | Sites allowed to embed this one in a frame | `'self'` |
 | `DEMO=1` | Same as `npm run demo` | off |
+| `X_BEARER_TOKEN` | X API key for My panel | off |
+| `X_DAILY_POSTS` | Most posts read from X in one UTC day | 2000 |

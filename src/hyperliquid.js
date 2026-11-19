@@ -30,7 +30,10 @@ export function createHyperliquid({ fetchImpl = fetch, now = Date.now, timeoutMs
     const t = now();
     if (t - windowStart >= 60000) { windowStart = t; spent = 0; }
     const cost = WEIGHT[type] || 20;
-    if (spent + cost > weightPerMinute) return false;
+    // History and trade calls may not use the whole allowance: a part is always kept
+    // back for prices and the order book, which every page needs.
+    const ceiling = type === 'metaAndAssetCtxs' || type === 'l2Book' ? weightPerMinute : weightPerMinute - Math.min(200, weightPerMinute / 4);
+    if (spent + cost > ceiling) return false;
     spent += cost;
     return true;
   };

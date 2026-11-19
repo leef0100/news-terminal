@@ -405,7 +405,7 @@ test('hyperliquid adapter: grouped depth, funding history, and a cap on what thi
     if (body.type === 'fundingHistory') return { ok: true, status: 200, json: async () => [{ time: 2000, fundingRate: '0.00002' }, { time: 1000, fundingRate: '-0.00001' }, { time: 'x', fundingRate: 'y' }] };
     return { ok: true, status: 200, json: async () => [] };
   };
-  const hl = createHyperliquid({ fetchImpl, now: () => t, weightPerMinute: 34 });
+  const hl = createHyperliquid({ fetchImpl, now: () => t, weightPerMinute: 44 });
   const d = await hl.depth('BTC', 9);
   assert.equal(d.sig, 3, 'an unsupported grouping falls back to the default');
   assert.deepEqual(d.bids, [{ px: 99, sz: 2 }], 'empty levels are dropped');
@@ -414,7 +414,7 @@ test('hyperliquid adapter: grouped depth, funding history, and a cap on what thi
   const f = await hl.fundingHistory('BTC');
   assert.deepEqual(f, [{ time: 1000, rate: -0.00001 }, { time: 2000, rate: 0.00002 }], 'oldest first, bad rows dropped');
   assert.equal(calls[1].startTime % 3600000, 0, 'the start is on the hour so everyone shares one cached answer');
-  // 2 + 30 of the 34 allowed are spent. A fresh question is refused, an old one is answered from memory.
+  // 2 + 30 are spent, and history may use only three quarters of the 44. A fresh question is refused, an old one is answered from memory.
   await assert.rejects(hl.fundingHistory('ETH'), /allowance/);
   t += 5000;
   assert.deepEqual((await hl.depth('BTC', 3)).bids, [{ px: 99, sz: 2 }]);

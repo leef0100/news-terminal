@@ -1,8 +1,13 @@
 # Halftone
 
-Live market news for traders. One feed for crypto, markets, business, technology, macro and
-politics, with the tokens each story moves, the copycats flagged, a room to talk about what
-is breaking, a read on how traders are positioned, and live markets.
+A market terminal for crypto. One live feed for crypto, markets, business, technology, macro
+and politics, with the tokens each story moves and the copycats flagged; a room to talk about
+what is breaking; a chart workspace with levels, positioning and a confluence read; every
+perpetual market live; your own panel of X accounts; and a status page that shows where every
+number comes from.
+
+Before showing it to anyone, read [READINESS.md](READINESS.md): it lists what has been
+checked, what has not, and what to do first.
 
 ## Run it
 
@@ -29,8 +34,11 @@ npm run test:e2e     # full browser test of every page (needs Chrome; set CHROME
 | **News** | The centrepiece. Live feed sorted into categories. The same story from several outlets is grouped into one row (by matching names, numbers and direction, so it errs towards keeping stories apart). Top stories panel, search, source filter, breaking-only and saved views, compact mode, keyboard control, shareable links. New stories wait behind a button while you read further down. |
 | **Story detail** | Other outlets reporting it, and matching Solana tokens: the one already trading before the story's first report comes first, anything that started trading after it is flagged with how long after, unknown ages are marked, thin pools too. Copy the address, open the chart, or open the token on pump.fun. |
 | **Breaking** | The most immediate items of the last hour, each with a live chat room, plus a general room. |
-| **Radar** | Long/short split per coin across venues, a funding heatmap, open interest, the Coinbase premium, and large Hyperliquid trades. |
-| **Markets** | Candle chart, order book, trades and stats for any Hyperliquid perpetual, streamed tick by tick from the exchange. |
+| **Radar** | A chart workspace for one market: candles with EMA 9/21/50/200 and anchored VWAP; key levels drawn on the chart (yesterday's high and low, pivots, repeated turning points, the most-traded price and value area, large resting orders); heat layers for volume by price, the order book and a modelled liquidation map; a confluence card that lines up trend, momentum, VWAP, volume, funding, positioning and location in plain language; the same readings across 15m, 1h, 4h and 1d; a risk-first position size calculator with a liquidation estimate; a market heatmap; funding across venues plus a week of hourly history; long/short split per venue; large trades. It describes the market. It does not give advice. |
+| **Markets** | Candle chart, order book, trades and stats for any Hyperliquid perpetual, streamed tick by tick from the exchange, and a sortable, filterable table of every market. |
+| **My panel** | Add up to 20 X usernames and read their posts in one feed; pick one to see only theirs. The list stays in the browser. Needs an X API key on the server (see below). |
+| **Status** | Every news source and market venue with its state, newest story, and the measured delay between a publisher's timestamp and the story appearing here. |
+| **Search** | Ctrl or Cmd + K jumps to a page, a market or a headline. |
 | **Wallet** | Connect Phantom, Solflare, Backpack, MetaMask, Coinbase Wallet and other announcing wallets. Connect only: no signature, no transaction. |
 | **Home** | A newsprint collage built from the highest-impact headlines in the live feed. |
 
@@ -38,25 +46,23 @@ npm run test:e2e     # full browser test of every page (needs Chrome; set CHROME
 
 | Data | Source | Notes |
 |---|---|---|
-| News | RSS feeds listed in `config/sources.json` (crypto outlets, plus WSJ, NYT and FT sections) | Headline, time and link only, never the article. Polled every 20 seconds. |
+| News | RSS feeds listed in `config/sources.json` (crypto outlets; WSJ, NYT and FT sections; SEC, Federal Reserve and ECB releases) | Headline, time and link only, never the article. Polled every 20 seconds. |
 | Token matches | DexScreener public search | Solana only. Cached 15 seconds per term. |
-| Live markets | Hyperliquid public stream, straight from the browser | History and a polling fallback come from this server. |
+| Live markets | Hyperliquid public stream and history, straight from each browser | Each viewer uses their own allowance at the exchange. This server is the fallback, with a cap on what it spends. |
+| X posts | X API v2, with `X_BEARER_TOKEN` | Paid: X charges per post read and has no free read access. Each account is fetched once for all viewers, only new posts are requested, and `X_DAILY_POSTS` (default 2000) caps a day's reads. Posts arrive by polling, typically within a minute, not instantly. |
 | Positioning | Binance and Bybit futures, Hyperliquid, Coinbase spot | Binance and Bybit do not serve some regions, the US included, and show as unavailable there. |
 
-Not included, and why: Coinglass heatmaps (their data is licensed; a paid key would add
-liquidation heatmaps), Papertrade (no public data feed), X accounts (needs a paid streaming
-provider; `src/ingest/x.js` is the slot).
+Not included, and why: Coinglass heatmaps (their data is licensed; the liquidation layer here
+is a labelled model built from traded volume, not real positions), Papertrade (no public data
+feed), X accounts in the main news feed (`src/ingest/x.js` is the slot; it wants a streaming
+connection, which is a separate X product from the polling the panel uses).
 
 ## What has and has not been verified
 
-Verified by tests: every page and interaction in a real browser against demo data; the
-server API; two web servers and an ingest worker sharing one feed and chat through Redis;
-the live-market stream against a stand-in that speaks the exchange's protocol.
-
-Not yet verified: any call to a real outside service. The feed addresses, DexScreener,
-Hyperliquid, Binance, Bybit and Coinbase are used as their public documentation describes,
-but this was built where those sites could not be reached. On first live run, check
-`http://localhost:3000/api/health` for feeds that fail and fix or remove them.
+See [READINESS.md](READINESS.md) for the full list. In short: every page is tested in a real
+browser against demo data and stand-in exchanges, and the trading maths is tested against
+worked examples. No call to a real outside service has been made from where this was built.
+On the first live run, open the Status page and fix or remove anything marked failing.
 
 ## Before a commercial launch
 
@@ -80,6 +86,7 @@ src/tokens.js         token search, ranking, copycat flags
 src/chat.js           chat rooms
 src/radar.js          cross-exchange positioning snapshot
 src/hyperliquid.js    market data history and polling fallback
+src/xpanel.js         personal X panels
 src/ingest/           RSS reader, poller, demo data, X slot
 public/               the site (plain HTML, CSS and JavaScript, no build step)
 test/                 unit, server, cluster and browser tests
@@ -87,4 +94,5 @@ test/                 unit, server, cluster and browser tests
 
 API: `/api/feed`, `/api/item?id=`, `/api/stream`, `/api/tokens?q=`, `/api/chat`,
 `/api/chat/stream?room=`, `/api/chat/counts`, `/api/radar`, `/api/markets`,
-`/api/markets/book|candles|trades?coin=`, `/api/health`, `/healthz`.
+`/api/markets/book|candles|trades|depth|funding?coin=`, `/api/x?handles=`, `/api/status`,
+`/api/health`, `/healthz`.

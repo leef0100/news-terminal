@@ -29,7 +29,7 @@
     onPage: false, active: false, coin: 'BTC', interval: '1h', markets: [], snap: null,
     c: {}, depth: null, funding: [], profile: null, walls: [], levels: [], liq: null, conf: null,
     chart: null, candles: null, volume: null, lines: {}, priceLines: [], fitted: '', shown: '',
-    stream: null, live: false, timers: [], raf: null, sig: '', dirty: false, loadId: 0,
+    stream: null, live: false, timers: [], raf: null, sig: '', dirty: false, loadId: 0, run: 0, sigs: {}, tf: {}, coinTimer: null,
     on: { ema9: false, ema21: true, ema50: true, ema200: true, vwap: true, levels: true, profile: true, book: true, liq: false }
   };
   try {
@@ -121,13 +121,20 @@
         st.fitted = '';
         remember('nt.rinterval', v);
         renderIntervals();
+        refocus('iv-' + v);
         clearChart();
         analyse();
+        loadCandles(v).then(function () { st.shown = ''; analyse(); });
         resubscribe();
       });
+      b.dataset.fk = 'iv-' + v;
       box.appendChild(b);
     });
   }
+  function refocus(key) { var n = document.querySelector('#view-radar [data-fk="' + key + '"]'); if (n) n.focus(); }
+  // A panel is rebuilt only when what it would show has changed, so focus, open
+  // explanations and selected text survive the refreshes.
+  function changed(name, value) { var v = JSON.stringify(value); if (st.sigs[name] === v) return false; st.sigs[name] = v; return true; }
   function renderToggles() {
     var box = $('rToggles');
     box.textContent = '';
@@ -141,9 +148,12 @@
         st.on[t.id] = !st.on[t.id];
         remember('nt.rlayers', JSON.stringify(st.on));
         renderToggles();
+        refocus('tg-' + t.id);
+        st.sigs.lines = '';
         drawOverlays();
         st.dirty = true;
       });
+      b.dataset.fk = 'tg-' + t.id;
       box.appendChild(b);
     });
   }
@@ -178,6 +188,7 @@
     LINES.forEach(function (l) { st.lines[l.id].setData([]); });
     st.priceLines.forEach(function (pl) { st.candles.removePriceLine(pl); });
     st.priceLines = [];
+    st.sigs.lines = '';
     st.dirty = true;
   }
 
@@ -213,17 +224,17 @@
       vals.forEach(function (v, i) { if (v != null && isFinite(v)) pts.push({ time: local(list[i].time), value: v }); });
       series.setData(pts);
     });
-    st.priceLines.forEach(function (pl) { st.candles.removePriceLine(pl); });
-    st.priceLines = [];
-    if (st.on.levels) {
-      var p = price();
-      // The five nearest on each side: more than that and the chart is unreadable.
-      var above = st.levels.filter(function (l) { return l.side === 'above'; }).sort(function (a, b) { return a.price - b.price; }).slice(0, 5);
-      var below = st.levels.filter(function (l) { return l.side === 'below'; }).sort(function (a, b) { return b.price - a.price; }).slice(0, 5);
-      above.concat(below).forEach(function (l) {
-        if (!p || Math.abs(l.distPct) > 12) return;
+    // The nearest few on each side: more than that and the chart is unreadable. Fewer on a phone.
+    var p = price(), narrow = $('rChart').clientWidth < 600, each = narrow ? 2 : 5;
+    var above = st.levels.filter(function (l) { return l.side === 'above'; }).sort(function (a, b) { return a.price - b.price; }).slice(0, each);
+    var below = st.levels.filter(function (l) { return l.side === 'below'; }).sort(function (a, b) { return b.price - a.price; }).slice(0, each);
+    var shownLevels = st.on.levels && p ? above.concat(below).filter(function (l) { return Math.abs(l.distPct) <= 12; }) : [];
+    if (changed('lines', [st.shown, narrow, shownLevels.map(function (l) { return [l.label, l.price]; })])) {
+      st.priceLines.forEach(function (pl) { st.candles.removePriceLine(pl); });
+      st.priceLines = [];
+      shownLevels.forEach(function (l) {
         var color = { pivot: '#9DB5A8', prior: '#F7D774', profile: '#7EEBD0', swing: l.side === 'above' ? '#F7A58E' : '#6BE89A', wall: '#86D3F7' }[l.kind];
-        st.priceLines.push(st.candles.createPriceLine({ price: l.price, color: color, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: l.label }));
+        st.priceLines.push(st.candles.createPriceLine({ price: l.price, color: color, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: narrow ? '' : l.label }));
       });
     }
     var parts = [];
@@ -362,11 +373,14 @@
     renderConfluence();
     renderLevels();
     renderTf();
+    renderSize();
     st.dirty = true;
   }
 
   function renderConfluence() {
     var c = st.conf;
+    if (!c || !changed('conf', [c.text, c.verdict, c.factors.map(function (f) { return [f.id, f.lean, f.detail]; })])) return;
+    $('rChart').setAttribute('aria-label', st.coin + ' ' + st.interval + ' price chart. ' + c.text + '.');
     var v = $('cVerdict');
     v.className = 'verdictBig v-' + c.verdict;
     v.textContent = c.text;
@@ -403,6 +417,7 @@
 
   function renderLevels() {
     var box = $('rLevels'), p = price();
+    if (!changed('levels', [px(p), st.levels.map(function (l) { return [l.label, l.note, px(l.price), l.distPct.toFixed(2)]; })])) return;
     box.textContent = '';
     var row = function (l) {
       var r = el('div', 'lv lv-' + l.kind + ' ' + l.side);
@@ -428,6 +443,7 @@
 
   function renderTf() {
     var t = $('rTf');
+    if (!changed('tf', INTERVALS.map(function (v) { var x = st.tf[v]; return x ? [x.trend, x.close, x.ema50, x.ema200, x.rsi, x.vwap] : [Boolean(st.c[v])]; }))) return;
     t.textContent = '';
     var head = el('tr');
     ['', 'Trend', 'vs EMA 50', 'vs EMA 200', 'RSI', 'vs VWAP'].forEach(function (hh, i) { var th = el('th', null, hh); if (i) th.scope = 'col'; head.appendChild(th); });
@@ -454,6 +470,7 @@
       var list = st.markets.slice(0, 28), maxV = list.length ? list[0].volume24hUsd : 1;
       list.forEach(function (m) {
         var b = el('button', 'tile' + (m.coin === st.coin ? ' on' : ''));
+        b.setAttribute('aria-pressed', String(m.coin === st.coin));
         b.type = 'button';
         b.dataset.fk = 'map:' + m.coin;
         // Area follows volume on a compressed scale, so small markets stay readable.
@@ -538,7 +555,7 @@
       var chip = el('span', 'venue ' + state);
       chip.appendChild(el('span', 'dot'));
       chip.appendChild(el('b', null, v.name));
-      chip.appendChild(el('span', null, v.ok ? (v.partial ? 'partial' : 'live') : 'unavailable'));
+      chip.appendChild(el('span', null, v.ok ? (d.demo ? 'sample' : v.partial ? 'partial' : 'live') : 'unavailable'));
       if (v.error) chip.title = v.error;
       vb.appendChild(chip);
     });
@@ -577,7 +594,7 @@
       card.appendChild(foot);
       box.appendChild(card);
     });
-    $('bigNote').textContent = 'Hyperliquid trades of ' + money(d.bigTradeUsd) + ' or more in BTC, ETH and SOL. A trade can open or close a position; the feed cannot tell which.';
+    $('bigNote').textContent = (d.demo ? 'Demo: invented trades. On live data these are ' : '') + 'Hyperliquid trades of ' + money(d.bigTradeUsd) + ' or more in BTC, ETH and SOL. A trade can open or close a position; the feed cannot tell which.';
     var tb = $('bigTrades');
     tb.textContent = '';
     if (!d.bigTrades.length) tb.appendChild(el('p', 'muted', 'No large trades in the latest window.'));
@@ -623,13 +640,14 @@
   }
 
   // ---------- data ----------
-  function fail(what) { if (!st.c[st.interval]) { $('radarState').hidden = false; $('radarState').textContent = what; } }
+  function fail(what) { if (!st.c[st.interval] || !st.c[st.interval].length) { $('radarState').hidden = false; $('radarState').textContent = what; } }
 
   function loadCandles(interval) {
     var coin = st.coin, id = st.loadId;
     // 600 candles: enough history for the 200-period average to have settled.
     return HL.candles(coin, interval, 600).then(function (list) {
-      if (coin !== st.coin || id !== st.loadId || !list.length) return;
+      if (coin !== st.coin || id !== st.loadId) return;
+      if (!list.length) { if (!st.c[interval]) st.c[interval] = []; return; }
       // A live tick may already have moved the last candle on; keep the newer one.
       var have = st.c[interval];
       if (have && have.length && st.live && interval === st.interval) {
@@ -640,8 +658,19 @@
       st.c[interval] = list;
     }).catch(function () { if (interval === st.interval) fail('Market data is unavailable right now. Retrying.'); });
   }
+  // The chart's own candles first, so the page fills in quickly; the other three follow
+  // a moment later, which also keeps a burst of market switches from flooding the exchange.
   function loadAllCandles() {
-    return Promise.all(INTERVALS.map(loadCandles)).then(analyse);
+    var id = st.loadId;
+    return loadCandles(st.interval).then(function () {
+      if (id !== st.loadId) return;
+      if (st.c[st.interval] && !st.c[st.interval].length) fail('No price history for this market yet.');
+      analyse();
+      return new Promise(function (done) { setTimeout(done, 700); }).then(function () {
+        if (id !== st.loadId) return;
+        return Promise.all(INTERVALS.filter(function (v) { return v !== st.interval; }).map(loadCandles)).then(analyse);
+      });
+    });
   }
   function loadDepth() {
     var coin = st.coin;
@@ -705,15 +734,29 @@
     renderPicker();
     renderMap();
     clearChart();
+    // Nothing from the previous market may stay on screen under the new name.
+    st.levels = []; st.conf = null; st.tf = {}; st.sigs = {};
     $('rTitle').textContent = coin + ' · ' + st.interval;
-    loadAllCandles();
-    loadDepth();
-    loadFunding();
-    resubscribe();
+    $('cVerdict').className = 'verdictBig v-unknown';
+    $('cVerdict').textContent = 'Loading…';
+    ['cCounts', 'cFactors', 'rLevels', 'rTf', 'rFundHist'].forEach(function (id) { $(id).textContent = ''; });
+    $('radarState').hidden = true;
+    renderSize();
+    // Stepping through the list with the arrow keys should cost one load, not one per step.
+    clearTimeout(st.coinTimer);
+    st.coinTimer = setTimeout(function () {
+      if (!st.active) return;
+      loadAllCandles();
+      loadDepth();
+      loadFunding();
+      resubscribe();
+    }, 250);
   }
 
   function stop() {
     st.active = false;
+    st.run = (st.run || 0) + 1;
+    clearTimeout(st.coinTimer);
     st.timers.forEach(clearInterval);
     st.timers = [];
     cancelAnimationFrame(st.raf);
@@ -727,13 +770,18 @@
     if (!st.onPage || document.hidden) return;
     st.active = true;
     st.loadId += 1;
+    // Each start is numbered. Work queued by an earlier start (or cut short by a stop)
+    // sees that its number is out of date and does nothing, so only one stream is ever open.
+    var run = ++st.run;
+    // Whatever is on the chart may have gaps from the time away: redraw it from fresh data.
+    st.shown = '';
     setNote('wait');
     renderIntervals();
     renderToggles();
     renderSize();
     watchHeat();
     loadMarkets().then(function () {
-      if (!st.active) return;
+      if (!st.active || run !== st.run) return;
       loadAllCandles();
       loadDepth();
       loadFunding();
@@ -744,18 +792,18 @@
           onMessage: onStream,
           onOpen: function () { st.live = true; setNote('live'); },
           onDown: function () { st.live = false; if (st.active) setNote('poll'); },
-          onRetry: function () { if (st.active) loadCandles(st.interval).then(analyse); }
+          onRetry: function () { if (st.active) loadCandles(st.interval).then(function () { st.shown = ''; analyse(); }); }
         });
         st.stream.set(wanted());
       }
     });
     st.timers = [
       // Live ticks are folded into the panels at most once a second.
-      setInterval(function () { if (st.tickPending) { st.tickPending = false; analyse(); } }, 1000),
+      setInterval(function () { if (st.tickPending) { st.tickPending = false; analyse(); } }, 3000),
       // Without a live stream the chart's own timeframe is refreshed often; the others slowly.
-      setInterval(function () { if (!st.live) loadCandles(st.interval).then(function () { st.shown = ''; analyse(); }); }, 10000),
+      setInterval(function () { if (!st.live || !st.c[st.interval]) loadCandles(st.interval).then(function () { st.shown = ''; analyse(); }); }, 10000),
       setInterval(function () { Promise.all(INTERVALS.filter(function (v) { return v !== st.interval; }).map(loadCandles)).then(analyse); }, 60000),
-      setInterval(loadDepth, 5000),
+      setInterval(loadDepth, 15000),
       setInterval(loadMarkets, 15000),
       setInterval(loadSnapshot, 20000),
       setInterval(loadFunding, 600000)

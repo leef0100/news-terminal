@@ -14,14 +14,24 @@ window.HL = (function () {
   var demo = null;        // unknown until the market list has been loaded once
   var directOffUntil = 0; // after a failed direct call, use our server for a while
 
+  // A request that gets no answer is given up on, so the page can fall back or say so.
+  function limit() { return window.AbortSignal && AbortSignal.timeout ? AbortSignal.timeout(7000) : undefined; }
+  // Candles exactly as a chart needs them: complete numbers, oldest first, one per time.
+  function clean(list) {
+    var ok = list.filter(function (c) { return c.time > 0 && [c.open, c.high, c.low, c.close].every(function (n) { return isFinite(n) && n > 0; }) && isFinite(c.volume); })
+      .sort(function (a, b) { return a.time - b.time; });
+    var out = [];
+    ok.forEach(function (c) { if (out.length && out[out.length - 1].time === c.time) out[out.length - 1] = c; else out.push(c); });
+    return out.slice(-700);
+  }
   function server(url) {
-    return fetch(url).then(function (r) { return r.json(); }).then(function (d) {
+    return fetch(url, { signal: limit() }).then(function (r) { return r.json(); }).then(function (d) {
       if (d.error) throw new Error(d.error);
       return d;
     });
   }
   function direct(body) {
-    return fetch(HTTP, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }).then(function (r) {
+    return fetch(HTTP, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: limit() }).then(function (r) {
       if (!r.ok) throw new Error('exchange ' + r.status);
       return r.json();
     });
@@ -52,11 +62,10 @@ window.HL = (function () {
       { type: 'candleSnapshot', req: { coin: coin, interval: interval, startTime: end - (bars || 300) * step, endTime: end } },
       function (rows) {
         if (!Array.isArray(rows)) throw new Error('unexpected answer');
-        return rows.map(function (c) { return { time: Math.floor(c.t / 1000), open: Number(c.o), high: Number(c.h), low: Number(c.l), close: Number(c.c), volume: Number(c.v) }; })
-          .filter(function (c) { return isFinite(c.close) && c.time > 0; });
+        return clean(rows.map(function (c) { return { time: Math.floor(c.t / 1000), open: Number(c.o), high: Number(c.h), low: Number(c.l), close: Number(c.c), volume: Number(c.v) }; }));
       },
       '/api/markets/candles?coin=' + encodeURIComponent(coin) + '&interval=' + encodeURIComponent(interval) + ((bars || 300) > 300 ? '&bars=600' : ''),
-      function (d) { return d.candles || []; }
+      function (d) { return clean(Array.isArray(d.candles) ? d.candles : []); }
     );
   }
 
@@ -111,7 +120,12 @@ window.HL = (function () {
       drop();
       if (closed) return;
       var sock;
-      try { sock = new WebSocket(WS); } catch (e) { if (h.onDown) h.onDown(); return; }
+      try { sock = new WebSocket(WS); } catch (e) {
+        if (h.onDown) h.onDown();
+        retry = Math.min(retry + 1, 6);
+        timer = setTimeout(connect, Math.min(60000, 1000 * Math.pow(2, retry)));
+        return;
+      }
       ws = sock;
       sock.onopen = function () {
         open = true;

@@ -305,15 +305,20 @@ export async function createApp({ demo = false, xToken = '', xDailyPosts = 2000,
 
     // Markets page: history and a polling fallback. Live updates go from the browser
     // straight to the exchange's own stream, so they put no load on this server.
-    const market = (seconds, fn) => async (req, res) => {
+    // `costly` routes each spend a real share of this server's allowance at the exchange,
+    // so one viewer gets only a few a minute; nobody can use the allowance up for everyone.
+    const market = (seconds, fn, costly = false) => async (req, res) => {
       const coin = String(req.query.coin || 'BTC');
       if (!validCoin(coin)) return refuse(res, 400, { error: 'Unknown market' });
       if (!(await local.allow('mkt:' + req.ip, 600, 60000))) return refuse(res, 429, { error: 'Too many requests' });
+      if (costly && !demo && !(await local.allow('mktx:' + req.ip, 24, 60000))) return refuse(res, 429, { error: 'Too many requests' });
       try {
         // Only markets the exchange lists; a made-up name must not cost an upstream call.
         if (!(await hl.has(coin))) return refuse(res, 400, { error: 'Unknown market' });
         shared(res, seconds).json(await fn(coin, req));
       } catch (err) {
+        // A request we would never answer is refused outright, so it cannot be cached as a variant.
+        if (err.status === 400) return refuse(res, 400, { error: err.message });
         fail(res, err);
       }
     };
@@ -326,13 +331,18 @@ export async function createApp({ demo = false, xToken = '', xDailyPosts = 2000,
     });
     app.get('/api/markets/book', market(1, (coin) => hl.book(coin)));
     app.get('/api/markets/trades', market(1, async (coin) => ({ trades: await hl.trades(coin) })));
-    app.get('/api/markets/depth', market(2, (coin, req) => hl.depth(coin, req.query.sig)));
-    app.get('/api/markets/funding', market(300, async (coin) => ({ coin, history: await hl.fundingHistory(coin) })));
+    app.get('/api/markets/depth', market(2, (coin, req) => {
+      const sig = req.query.sig === undefined ? '3' : String(req.query.sig);
+      if (!['2', '3', '4', '5'].includes(sig)) throw Object.assign(new Error('Unknown grouping'), { status: 400 });
+      return hl.depth(coin, Number(sig));
+    }));
+    app.get('/api/markets/funding', market(300, async (coin) => ({ coin, history: await hl.fundingHistory(coin) }), true));
     app.get('/api/markets/candles', market(10, async (coin, req) => {
-      const interval = Object.hasOwn(INTERVALS, String(req.query.interval)) ? String(req.query.interval) : '15m';
+      const interval = req.query.interval === undefined ? '15m' : String(req.query.interval);
+      if (!Object.hasOwn(INTERVALS, interval)) throw Object.assign(new Error('Unknown candle size'), { status: 400 });
       // Two sizes only, so everyone shares the same cached answers.
       return { interval, candles: await hl.candles(coin, interval, String(req.query.bars) === '600' ? 600 : 300) };
-    }));
+    }, true));
 
     // Breaking-page chat. `room` is "general" or a feed item id.
     app.get('/api/chat', (req, res) => {

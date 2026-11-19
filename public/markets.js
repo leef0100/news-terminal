@@ -380,6 +380,7 @@
   var marketsTimer = null;
   function stop() {
     st.active = false;
+    st.run = (st.run || 0) + 1;
     clearTimeout(st.historyRetry);
     stopPolling();
     clearInterval(marketsTimer);
@@ -389,8 +390,9 @@
     st.active = true;
     setNote('wait');
     renderIntervals();
+    var run = (st.run = (st.run || 0) + 1);
     loadMarkets().then(function () {
-      if (!st.active) return;
+      if (!st.active || run !== st.run) return;
       loadCandles();
       loadBook();
       loadTrades();
