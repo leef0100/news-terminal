@@ -24,7 +24,7 @@ import { demoMarketFetch } from './ingest/demo-markets.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 
-export async function createApp({ demo = false, xToken = '', xDailyPosts = 2000, config, role = 'all', redisUrl = '', sseMax = 10000, streamsPerAddress = 12, frameAncestors = "'self'", trustProxy = false } = {}) {
+export async function createApp({ demo = false, chatOff = false, xToken = '', xDailyPosts = 2000, config, role = 'all', redisUrl = '', sseMax = 10000, streamsPerAddress = 12, frameAncestors = "'self'", trustProxy = false } = {}) {
   // A web-only or ingest-only process has nobody to talk to without Redis: the feed would
   // stay empty for ever. Better to stop here than to start quietly broken.
   if (role !== 'all' && !redisUrl) throw new Error(`ROLE=${role} needs REDIS_URL`);
@@ -358,6 +358,8 @@ export async function createApp({ demo = false, xToken = '', xDailyPosts = 2000,
     });
     app.post('/api/chat', async (req, res) => {
       res.set('cache-control', 'no-store');
+      // Chat has no accounts or moderation yet, so a public site can run with it read-only.
+      if (chatOff) return refuse(res, 403, { error: 'Chat is switched off on this site' });
       const b = req.body && typeof req.body === 'object' ? req.body : {};
       try {
         const out = await chat.post({ room: b.room, name: b.name, text: b.text, ip: req.ip });
@@ -476,6 +478,7 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     sseMax: Number(process.env.SSE_MAX) || 10000,
     streamsPerAddress: Number(process.env.STREAMS_PER_ADDRESS) || 12,
     frameAncestors: process.env.FRAME_ANCESTORS || "'self'",
+    chatOff: process.env.CHAT === 'off',
     // A number of proxies in front (1 for a load balancer, 2 for a CDN plus a load balancer), or "true".
     trustProxy: /^\d+$/.test(process.env.TRUST_PROXY || '') ? Number(process.env.TRUST_PROXY) : process.env.TRUST_PROXY === 'true'
   });

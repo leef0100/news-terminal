@@ -1,0 +1,31 @@
+# One-click deployment on Render (render.com): New > Blueprint > pick this repository.
+# Frankfurt on purpose: Binance and Bybit refuse servers in the United States.
+services:
+  - type: web
+    name: halftone
+    runtime: node
+    region: frankfurt
+    plan: starter
+    buildCommand: npm ci --omit=dev
+    startCommand: node src/server.js
+    healthCheckPath: /healthz
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      - key: TRUST_PROXY
+        value: "1"
+      - key: CHAT
+        value: "off"
+      # The SEC asks every program that reads EDGAR to say who is calling. Use your own
+      # site name and a contact address, e.g. "Halftone you@yourdomain.com".
+      - key: SEC_USER_AGENT
+        sync: false
+      # Optional keys. Leave empty to run without that source; the Status page says what is off.
+      - key: X_BEARER_TOKEN
+        sync: false
+      - key: FRED_KEY
+        sync: false
+      - key: FINNHUB_KEY
+        sync: false
+      - key: TWELVEDATA_KEY
+        sync: false
