@@ -1,0 +1,202 @@
+/* Stocks, Calendar and Private. Colour comes only from the theme's variables, so these
+   pages follow whatever theme styles.css sets. --up and --down are gains and losses. */
+#view-stocks, #view-calendar, #view-private { --tf-up: var(--up, #1E8E4E); --tf-down: var(--down, #C8452C); }
+#view-stocks :focus-visible, #view-calendar :focus-visible, #view-private :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#view-stocks .up, #view-calendar .up, #view-private .up { color: var(--tf-up); }
+#view-stocks .down, #view-calendar .down, #view-private .down { color: var(--tf-down); }
+.breakHead .kicker.tfKick { color: var(--accent); }
+.tfHeadNote { font-size: 13px; text-align: right; max-width: 60ch; }
+.tfDemo { color: var(--warn); }
+.tfNote { text-align: right; }
+.tfBlock { min-width: 0; }
+.tfBlock h3 { margin: 0; }
+.tfBlock .link, .tfLede .link { padding: 12px 0; }
+.tfMsg { min-height: 18px; margin: 6px 0; font-size: 12px; color: var(--text-2); }
+.tfWarn { padding: 8px 12px; border-radius: 10px; background: var(--warn-bg); color: var(--warn); margin-bottom: 10px; }
+.tfLede { max-width: 86ch; font-size: 15px; color: var(--text-2); }
+.tfBar { align-items: center; }
+.tfBar .backBtn { align-self: center; min-height: 44px; }
+
+/* search */
+.tfSearch { position: relative; flex: 1 1 320px; max-width: 560px; min-width: 0; }
+.tfResults { position: absolute; z-index: 15; left: 0; right: 0; top: calc(100% + 4px); list-style: none; margin: 0; padding: 6px; max-height: min(60vh, 440px); overflow-y: auto; border-radius: 12px; border: 1px solid var(--line-2); background: var(--panel); box-shadow: 0 14px 30px color-mix(in srgb, var(--accent-ink) 28%, transparent); }
+.tfOpt { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto; align-items: center; gap: 10px; min-height: 44px; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+.tfOpt:hover { background: var(--bar); }
+.tfOpt.on { background: var(--panel-on); box-shadow: inset 3px 0 0 var(--accent); }
+.tfOptName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tfOptNote { padding: 10px; font-size: 13px; }
+
+/* tiles */
+.tfTiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 176px), 1fr)); gap: 10px; }
+.tfTile { min-width: 0; gap: 3px; }
+.tfTile .statLabel { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 8px; }
+.tfTick { font-size: 11px; color: var(--text-3); }
+th .tfTick { margin-left: 8px; }
+.tfVal { font-family: var(--mono); font-size: 19px; font-weight: 500; line-height: 1.25; overflow-wrap: anywhere; }
+.tfIdxLine { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+.tfChg { font-size: 13px; white-space: nowrap; }
+.tfSpark { display: block; width: 100%; height: 34px; margin: 4px 0 2px; }
+.tfSpark polyline { stroke: var(--text-3); stroke-width: 1.6; stroke-linejoin: round; }
+.tfSpark.up polyline { stroke: var(--tf-up); } .tfSpark.down polyline { stroke: var(--tf-down); }
+
+/* sectors */
+.tfHeat { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 6px; }
+.tfHeatCell { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bar); color: var(--text); font-size: 12.5px; }
+.tfHeatCell.up { background: color-mix(in srgb, var(--tf-up) var(--m, 10%), var(--bar)); color: var(--text); }
+.tfHeatCell.down { background: color-mix(in srgb, var(--tf-down) var(--m, 10%), var(--bar)); color: var(--text); }
+.tfHeatCell b { font-size: 13px; font-weight: 500; }
+.tfHeatName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* tables */
+.tfThree { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px 28px; }
+.tfMover { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.tfSplit { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (min-width: 1040px) { .tfSplit { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); } }
+.tfBlock .thBtn { min-height: 40px; }
+.tfBlock .screener th[scope=row] { text-align: left; font-weight: 400; color: var(--text); font-size: 13px; padding: 4px 8px 4px 0; border-top: 1px solid var(--line); white-space: normal; }
+.tfBlock .screener tbody tr:hover th { background: var(--bar); }
+.tfBlock .screener tfoot th, .tfBlock .screener tfoot td { border-top: 2px solid var(--line-2); font-weight: 600; color: var(--text); padding-top: 12px; padding-bottom: 12px; }
+.tfRowLink { cursor: pointer; }
+.tfSym { display: flex; flex-direction: column; justify-content: center; min-height: 40px; color: var(--text); text-decoration: none; }
+.tfSym b { color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.tfCoName { display: block; max-width: 24ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tfRm { width: 40px; height: 40px; }
+.tfWatch td:last-child { width: 48px; padding-right: 0; }
+.tfWrapCell { white-space: normal !important; min-width: 150px; }
+.tfRaises th[scope=row] { min-width: 180px; }
+.tfIpo th[scope=row] { min-width: 180px; }
+.tfIpo td { vertical-align: middle !important; }
+
+/* yield curve */
+.tfCurve { min-height: 230px; overflow: hidden; }
+.tfCurve svg { display: block; }
+.tfGrid { stroke: var(--line); stroke-width: 1; }
+.tfAxis { fill: var(--text-3); font: 11px var(--mono); }
+.tfLine { stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.tfDot { fill: var(--panel); stroke: var(--accent); stroke-width: 2; }
+.tfSpread { font-size: 14px; }
+.tfYields th, .tfYields td { text-align: right !important; padding: 7px 8px !important; }
+.tfYields th[scope=row] { text-align: left !important; color: var(--text-3) !important; font-size: 12px !important; white-space: nowrap !important; }
+.tfYields tr:first-child th { border-top: 0 !important; color: var(--text-3); }
+
+/* company */
+.tfQuoteTop { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; }
+.tfPriceBox { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px; }
+.tfPrice { font-size: clamp(30px, 4vw, 40px); font-weight: 500; line-height: 1.1; }
+.tfPriceBox .tfChg { font-size: 16px; }
+.tfChartTop { gap: 10px 20px; }
+.tfLegend { display: flex; flex-wrap: wrap; gap: 4px 18px; color: var(--text-2); }
+.tfKey { display: inline-flex; align-items: center; gap: 8px; }
+.tfSw { display: inline-block; width: 22px; height: 0; border-top: 2px solid var(--text-2); }
+.tfSw200 { border-top: 2px dashed var(--warn); }
+.tfChart { height: clamp(300px, 46vh, 480px); }
+.tfChartSum { color: var(--text-2); max-width: 110ch; }
+
+/* statements */
+.tfStmtBar { gap: 10px 16px; }
+.tfSegs { display: flex; flex-wrap: wrap; gap: 8px; }
+.tfSegs .seg button { padding: 0 12px; font-family: var(--sans); font-size: 13px; }
+.tfExpand { min-height: 40px; }
+.tfCap { caption-side: top; text-align: left; padding: 0 0 10px; max-width: 100ch; }
+.tfStmt { font-variant-numeric: tabular-nums; }
+.tfStmt thead th { vertical-align: bottom; }
+.tfStmt th:first-child { position: sticky; left: 0; z-index: 1; background: var(--panel); min-width: 250px; max-width: 340px; }
+.tfStmt tbody th[scope=row] { padding: 0 10px 0 0; }
+.tfStmt td { padding-top: 0; padding-bottom: 0; height: 42px; }
+.tfDisc { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 40px; padding: 4px 0; border: 0; background: none; color: var(--text); font: inherit; font-weight: 600; text-align: left; }
+.tfChev { flex: none; width: 16px; color: var(--accent); font-size: 13px; text-align: center; }
+.tfLeaf { display: inline-block; padding: 8px 0 8px 22px; }
+.tfLv0 > th { font-weight: 500 !important; }
+.tfLv1 > th { padding-left: 22px !important; color: var(--text-2) !important; }
+.tfLv2 > th { padding-left: 44px !important; color: var(--text-2) !important; }
+.tfLv3 > th { padding-left: 66px !important; color: var(--text-2) !important; }
+.tfLv1 td, .tfLv2 td, .tfLv3 td { color: var(--text-2); }
+.tfMark { color: var(--warn); margin-left: 3px; font-family: var(--sans); }
+.tfTrendCell { width: 64px; }
+.tfTrend { display: block; margin-left: auto; overflow: visible; }
+.tfBarPos { fill: var(--text-3); } .tfBarNeg { fill: var(--tf-down); }
+.tfBase { stroke: var(--line-2); stroke-width: 1; }
+.tfYoy { font-size: 12px; }
+.tfFoot { max-width: 100ch; }
+.tfFilings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.tfFiling { display: grid; grid-template-columns: 76px minmax(0, 1fr) auto auto; align-items: center; gap: 4px 14px; min-height: 44px; padding: 6px 0; border-top: 1px solid var(--line); font-size: 13px; }
+.tfFiling:first-child { border-top: 0; }
+.tfFiling .stPill { justify-self: start; }
+.tfFilTitle { min-width: 0; overflow-wrap: anywhere; }
+
+/* calendar */
+.tfCalBar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 20px; }
+.tfChips, .tfPager { display: flex; flex-wrap: wrap; gap: 8px; }
+.tfChip { min-height: 40px; padding: 0 14px; border-radius: 999px; }
+.tfChip .tfTick { width: 12px; font-size: 13px; color: inherit; }
+.tfChip:not(.on) { color: var(--text-3); border-style: dashed; }
+.tfPager .btn { min-height: 40px; padding: 0 14px; }
+.tfPager .btn:disabled { opacity: .5; cursor: default; }
+.tfRange { margin: 12px 0 4px; font-size: 13px; color: var(--text-2); }
+.tfAgenda { display: flex; flex-direction: column; gap: 6px; }
+.tfDay { padding: 10px 0 2px 14px; border-left: 3px solid var(--line); }
+.tfDay.today { border-left-color: var(--accent); }
+.tfDayHead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 12px; font-family: var(--serif); font-size: 21px; font-weight: 400; line-height: 1.2; }
+.tfDayHead .stPill, .tfDayHead .muted { font-family: var(--sans); }
+.tfEvents { list-style: none; margin: 6px 0 0; padding: 0; }
+.tfEvent { display: grid; grid-template-columns: 124px 40px 104px minmax(0, 1fr); align-items: baseline; gap: 2px 12px; min-height: 40px; padding: 9px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+.tfTime { color: var(--text-2); font-size: 12.5px; }
+.tfImp { font-size: 9px; letter-spacing: 1px; color: var(--text-2); white-space: nowrap; }
+.tfKind { justify-self: start; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-3); white-space: nowrap; }
+.tfEvMain { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tfEvTitle { font-weight: 500; overflow-wrap: anywhere; }
+.tfEvLink { padding: 10px 0; }
+.tfEvMeta { overflow-wrap: anywhere; }
+
+/* private */
+.tfPvBar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.tfPvBar label { font-size: 13px; color: var(--text-2); }
+.tfPvBar .select { max-width: 100%; min-width: 0; }
+.tfPvBar .scFilter { height: 44px; width: min(220px, 100%); }
+
+@media (max-width: 720px) {
+  .tfHeadNote, .tfNote { text-align: left; }
+  .tfEvent { grid-template-columns: auto auto minmax(0, 1fr); }
+  .tfEvMain { grid-column: 1 / -1; }
+  .tfFiling { grid-template-columns: auto minmax(0, 1fr); }
+  .tfFilTitle { grid-column: 1 / -1; }
+  .tfStmt th:first-child { min-width: 150px; max-width: 46vw; font-size: 12.5px; }
+  .tfOpt { grid-template-columns: 64px minmax(0, 1fr); }
+  .tfOpt > .muted { display: none; }
+  .tfCoName { max-width: 18ch; }
+  .tfPager { width: 100%; }
+  .tfPager .btn { flex: 1 1 auto; padding: 0 10px; }
+}
+
+/* market map */
+.tfMapBox { position: relative; height: clamp(280px, 38vw, 420px); border-radius: 12px; overflow: hidden; background: var(--line); }
+.tfMapTile { position: absolute; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; min-width: 0; padding: 2px; overflow: hidden; border: 1px solid var(--panel); border-radius: 0; background: var(--bar); color: var(--text); font-family: var(--sans); line-height: 1.15; text-align: center; white-space: nowrap; }
+#view-stocks .tfMapTile, #view-stocks .tfMapSw, #view-stocks .tfHeatCell, #view-stocks .tfHeatCell b { color: var(--text); }
+.tfMapTile.up, .tfMapSw.up { background: color-mix(in srgb, var(--tf-up) var(--m, 10%), var(--bar)); }
+.tfMapTile.down, .tfMapSw.down { background: color-mix(in srgb, var(--tf-down) var(--m, 10%), var(--bar)); }
+.tfMapTile b { font-weight: 700; letter-spacing: .01em; }
+.tfMapTile span { font-size: .72em; }
+.tfMapTile.short span { display: none; }
+.tfMapTile.tiny b, .tfMapTile.tiny span { display: none; }
+.tfMapTile:hover { border-color: var(--text); z-index: 1; }
+.tfMapTile:focus-visible { z-index: 2; outline-offset: -3px !important; }
+.tfMapLegend { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 20px; }
+.tfMapLegend p { flex: 1 1 320px; max-width: 110ch; }
+.tfMapScale { display: flex; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); }
+.tfMapSw { padding: 5px 8px; background: var(--bar); font-family: var(--mono); font-size: 11px; white-space: nowrap; }
+
+/* candle table */
+.tfDetails summary { display: inline-flex; align-items: center; min-height: 40px; cursor: pointer; color: var(--accent); font-size: 13px; text-decoration: underline; }
+.tfCandleWrap { max-height: 360px; overflow-y: auto; }
+.tfCandles th[scope=row] { white-space: nowrap !important; padding: 9px 8px 9px 0 !important; }
+.tfCandles thead th { position: sticky; top: 0; background: var(--panel); }
+
+@media (max-width: 720px) {
+  .tfTiles { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); }
+  .tfMapBox { height: 340px; }
+  .tfMapSw { padding: 5px 5px; font-size: 10px; }
+}
+
+/* spacing inside a block, and text columns that read from the left */
+.tfBody { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.tfRaises th:nth-child(2), .tfRaises td:nth-child(2), .tfRaises th:nth-child(3), .tfRaises td:nth-child(3) { text-align: left; }
