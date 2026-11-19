@@ -1,12 +1,12 @@
 # Halftone
 
-A market terminal for crypto. One live feed for crypto, markets, business, technology, macro
-and politics, with the tokens each story moves and the copycats flagged; a room to talk about
-what is breaking; a chart workspace with levels, positioning and a confluence read; every
-perpetual market live; your own panel of X accounts; and a status page that shows where every
-number comes from.
+One terminal for crypto, stocks and private markets: live news; crypto charts, heatmaps,
+positioning and a confluence read; stock indexes, company pages and financial statements
+from SEC filings; calendars for earnings, IPOs and economic releases; the IPO pipeline and
+private fundraising filings; your own deck of X accounts; and a status page that shows
+where every number comes from. Green and white.
 
-Before showing it to anyone, read [READINESS.md](READINESS.md): it lists what has been
+To put it online, read [DEPLOY.md](DEPLOY.md). Before showing it to anyone, read [READINESS.md](READINESS.md): it lists what has been
 checked, what has not, and what to do first.
 
 ## Run it
@@ -36,7 +36,10 @@ npm run test:e2e     # full browser test of every page (needs Chrome; set CHROME
 | **Breaking** | The most immediate items of the last hour, each with a live chat room, plus a general room. |
 | **Radar** | A chart workspace for one market: candles with EMA 9/21/50/200 and anchored VWAP; key levels drawn on the chart (yesterday's high and low, pivots, repeated turning points, the most-traded price and value area, large resting orders); heat layers for volume by price, the order book and a modelled liquidation map; a confluence card that lines up trend, momentum, VWAP, volume, funding, positioning and location in plain language; the same readings across 15m, 1h, 4h and 1d; a risk-first position size calculator with a liquidation estimate; a market heatmap; funding across venues plus a week of hourly history; long/short split per venue; large trades. It describes the market. It does not give advice. |
 | **Markets** | Candle chart, order book, trades and stats for any Hyperliquid perpetual, streamed tick by tick from the exchange, and a sortable, filterable table of every market. |
-| **My panel** | Add up to 20 X usernames and read their posts in one feed; pick one to see only theirs. The list stays in the browser. Needs an X API key on the server (see below). |
+| **My panel** | Add up to 20 X usernames. Free mode: one column per account drawn by X's own embedded timelines, which X shows to anyone signed in to X in that browser; nothing loads from X until the viewer asks. Optional second mode: one merged feed through X's paid API. The list stays in the browser. |
+| **Stocks** | Indexes, sector moves, a market map, movers, the Treasury yield curve, macro figures and a watchlist. Every US-listed company has a page: price chart (daily, weekly, monthly, up to the full history held), key facts, income statement, balance sheet and cash flow as an expandable table (annual and quarterly, with year-over-year change), and recent filings linking to the SEC. |
+| **Calendar** | Earnings, IPOs, economic releases and central-bank meetings on one agenda, with filters. |
+| **Private** | Companies that have filed to go public, and private fundraising disclosed to the SEC on Form D: who raised, how much, which industry. Not valuations, and not a complete record of private deals. |
 | **Status** | Every news source and market venue with its state, newest story, and the measured delay between a publisher's timestamp and the story appearing here. |
 | **Search** | Ctrl or Cmd + K jumps to a page, a market or a headline. |
 | **Wallet** | Connect Phantom, Solflare, Backpack, MetaMask, Coinbase Wallet and other announcing wallets. Connect only: no signature, no transaction. |
@@ -49,7 +52,13 @@ npm run test:e2e     # full browser test of every page (needs Chrome; set CHROME
 | News | RSS feeds listed in `config/sources.json` (crypto outlets; WSJ, NYT and FT sections; SEC, Federal Reserve and ECB releases) | Headline, time and link only, never the article. Polled every 20 seconds. |
 | Token matches | DexScreener public search | Solana only. Cached 15 seconds per term. |
 | Live markets | Hyperliquid public stream and history, straight from each browser | Each viewer uses their own allowance at the exchange. This server is the fallback, with a cap on what it spends. |
-| X posts | X API v2, with `X_BEARER_TOKEN` | Paid: X charges per post read and has no free read access. Each account is fetched once for all viewers, only new posts are requested, and `X_DAILY_POSTS` (default 2000) caps a day's reads. Posts arrive by polling, typically within a minute, not instantly. |
+| Companies, statements, filings, IPO pipeline, private raises | SEC EDGAR (official, free) | Needs `SEC_USER_AGENT` (your site name and a contact email; the SEC requires it). Statements are built from each company's XBRL filings. |
+| Yield curve, central-bank dates | US Treasury, Federal Reserve (official, free) | End of day. |
+| Stock and index prices | Hyperliquid equity perpetuals with no key; Finnhub and Twelve Data with keys | There is no free official real-time stock feed. Perpetual prices are labelled as such: they are not the exchange's price. Twelve Data's free plan does not permit public display; a public site needs their business plan or another licensed feed. |
+| Macro figures, economic releases | FRED, with `FRED_KEY` | Free key. |
+| Earnings and IPO dates | Finnhub, with `FINNHUB_KEY` | Free key; display terms unconfirmed. |
+| X columns | X's embedded timelines, in the viewer's browser | Free. Shown by X only to viewers signed in to X. |
+| X merged feed | X API v2, with `X_BEARER_TOKEN` | Paid: X charges per post read and has no free read access. Each account is fetched once for all viewers, only new posts are requested, and `X_DAILY_POSTS` (default 2000) caps a day's reads. Posts arrive by polling, typically within a minute, not instantly. |
 | Positioning | Binance and Bybit futures, Hyperliquid, Coinbase spot | Binance and Bybit do not serve some regions, the US included, and show as unavailable there. |
 
 Not included, and why: Coinglass heatmaps (their data is licensed; the liquidation layer here
@@ -86,7 +95,8 @@ src/tokens.js         token search, ranking, copycat flags
 src/chat.js           chat rooms
 src/radar.js          cross-exchange positioning snapshot
 src/hyperliquid.js    market data history and polling fallback
-src/xpanel.js         personal X panels
+src/xpanel.js         personal X panels (merged feed)
+src/tradfi/           stocks, statements, calendars, private markets (see docs/TRADFI-SOURCES.md)
 src/ingest/           RSS reader, poller, demo data, X slot
 public/               the site (plain HTML, CSS and JavaScript, no build step)
 test/                 unit, server, cluster and browser tests
@@ -95,4 +105,5 @@ test/                 unit, server, cluster and browser tests
 API: `/api/feed`, `/api/item?id=`, `/api/stream`, `/api/tokens?q=`, `/api/chat`,
 `/api/chat/stream?room=`, `/api/chat/counts`, `/api/radar`, `/api/markets`,
 `/api/markets/book|candles|trades|depth|funding?coin=`, `/api/x?handles=`, `/api/status`,
+`/api/tradfi/overview|search|quote|candles|company|calendar|ipos|private`,
 `/api/health`, `/healthz`.

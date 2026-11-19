@@ -171,3 +171,9 @@ These are single-machine numbers on weak hardware, useful for sizing, not proof 
 | `DEMO=1` | Same as `npm run demo` | off |
 | `X_BEARER_TOKEN` | X API key for My panel | off |
 | `X_DAILY_POSTS` | Most posts read from X in one UTC day | 2000 |
+| `CHAT=off` | Makes chat read-only (recommended on a public site) | on |
+| `SEC_USER_AGENT` | Site name and contact email sent to the SEC; turns on company data | off |
+| `FINNHUB_KEY` | Stock quotes, earnings and IPO dates | off |
+| `TWELVEDATA_KEY` | Daily price history for any US share | off |
+| `FRED_KEY` | Macro figures and economic release dates | off |
+| `HL_EQUITY_DEX` | Hyperliquid venue used for keyless stock and index prices; `off` disables | `xyz` |

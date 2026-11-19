@@ -199,6 +199,20 @@
       vt.appendChild(tr);
     });
     $('stVenues').replaceChildren(vt);
+    var rt = document.createDocumentFragment();
+    rt.appendChild(headRow(['Source', 'State', 'Detail', 'Last answered']));
+    ((s.tradfi && s.tradfi.sources) || []).forEach(function (r) {
+      var tr = el('tr');
+      var n = el('td'); n.appendChild(el('b', null, r.name)); tr.appendChild(n);
+      var c = el('td');
+      c.appendChild(r.state === 'ok' ? pill('Answering', 'good') : r.state === 'off' ? pill('Not connected', 'wait') : pill('Failing', 'bad'));
+      tr.appendChild(c);
+      tr.appendChild(el('td', 'muted small', r.note || r.lastError || ''));
+      tr.appendChild(el('td', 'mono', r.lastOk ? ago(r.lastOk, now) : 'n/a'));
+      rt.appendChild(tr);
+    });
+    $('stRef').replaceChildren(rt);
+    $('stRefCard').hidden = !(s.tradfi && s.tradfi.sources && s.tradfi.sources.length);
     var ex = s.market.exchange || {};
     $('stMktNote').textContent = s.demo ? 'Demo venues. Their figures are invented.'
       : 'Positioning checked ' + ago(s.market.at, now) + '. Hyperliquid last answered this server ' + ago(ex.lastOk, now) + '; ' + (ex.spentThisMinute || 0) + ' of ' + (ex.allowancePerMinute || 0) + ' of its request allowance used this minute.';
@@ -214,7 +228,8 @@
   var pal = { items: [], shown: [], at: 0, feed: [], markets: [] };
   var PAGES = [
     ['Home', '#home', 'Front page'], ['News', '#news', 'The live feed'], ['Breaking', '#breaking', 'The most immediate stories, with chat'],
-    ['Radar', '#radar', 'Chart, levels, positioning and confluence'], ['Markets', '#markets', 'Order book, trades and every market'], ['My panel', '#panel', 'Your own feed of X accounts'], ['Status', '#status', 'Where every number comes from']
+    ['Stocks', '#stocks', 'Indexes, companies, charts and financial reports'], ['Calendar', '#calendar', 'Earnings, IPOs, economic releases and central banks'], ['Private', '#private', 'IPO pipeline and private fundraising filings'],
+    ['Radar', '#radar', 'Crypto chart, levels, heatmaps and confluence'], ['Crypto', '#markets', 'Order book, trades and every crypto market'], ['My panel', '#panel', 'Your own feed of X accounts'], ['Status', '#status', 'Where every number comes from']
   ];
   function buildPalette() {
     var items = PAGES.map(function (p) { return { kind: 'Page', text: p[0], sub: p[2], go: function () { location.hash = p[1]; } }; });
