@@ -169,6 +169,13 @@ window.HL = (function () {
   // time zone. Shifting the times themselves breaks twice a year, when two different hours
   // land on the same clock time, and puts every daily candle under the wrong date for
   // anyone west of UTC. Daily candles are UTC days, so they are labelled by their UTC date.
+  // Colours for charts and canvases, which cannot use CSS variables directly.
+  var THEME = {
+    text: '#2F4A3C', grid: 'rgba(143, 176, 155, .28)', border: '#C3D7CA',
+    up: '#12A05C', down: '#D9534A', upRgb: '18, 160, 92', downRgb: '217, 83, 74',
+    ema9: '#C99700', ema21: '#1D7FC4', ema50: '#7B5CD6', ema200: '#D0673A', vwap: '#0F2A1D',
+    pivot: '#587166', prior: '#B78900', profile: '#0E9C87', profileRgb: '14, 156, 135', wall: '#1D7FC4', liqRgb: '201, 151, 0'
+  };
   var MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   function chartTime(getInterval) {
     var two = function (n) { return String(n).padStart(2, '0'); };
@@ -196,7 +203,7 @@ window.HL = (function () {
     };
   }
 
-  return { chartTime: chartTime,
+  return { chartTime: chartTime, theme: THEME,
     markets: markets, candles: candles, depth: depth, funding: funding, stream: stream,
     isDemo: function () { return demo === true; },
     // In demo mode there is no exchange behind the numbers, so nothing to stream.

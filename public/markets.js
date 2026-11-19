@@ -144,18 +144,18 @@
     var chartTime = window.HL.chartTime(function () { return st.interval; });
     st.chart = window.LightweightCharts.createChart($('mChart'), {
       autoSize: true,
-      layout: { background: { color: 'transparent' }, textColor: '#C2D4CA', fontFamily: 'Inter, system-ui, sans-serif' },
+      layout: { background: { color: 'transparent' }, textColor: window.HL.theme.text, fontFamily: 'Inter, system-ui, sans-serif' },
       grid: { vertLines: { color: 'rgba(50, 80, 64, .5)' }, horzLines: { color: 'rgba(50, 80, 64, .5)' } },
-      rightPriceScale: { borderColor: '#325040' },
-      timeScale: { borderColor: '#325040', timeVisible: true, secondsVisible: false, tickMarkFormatter: chartTime.tickMarkFormatter },
+      rightPriceScale: { borderColor: window.HL.theme.border },
+      timeScale: { borderColor: window.HL.theme.border, timeVisible: true, secondsVisible: false, tickMarkFormatter: chartTime.tickMarkFormatter },
       localization: { timeFormatter: chartTime.timeFormatter },
       crosshair: { mode: 0 }
     });
-    st.candles = st.chart.addCandlestickSeries({ upColor: '#6BE89A', borderUpColor: '#6BE89A', wickUpColor: '#6BE89A', downColor: '#F2876B', borderDownColor: '#F2876B', wickDownColor: '#F2876B' });
+    st.candles = st.chart.addCandlestickSeries({ upColor: window.HL.theme.up, borderUpColor: window.HL.theme.up, wickUpColor: window.HL.theme.up, downColor: window.HL.theme.down, borderDownColor: window.HL.theme.down, wickDownColor: window.HL.theme.down });
     st.volume = st.chart.addHistogramSeries({ priceScaleId: '', priceFormat: { type: 'volume' } });
     st.volume.priceScale().applyOptions({ scaleMargins: { top: 0.84, bottom: 0 } });
   }
-  function volBar(c) { return { time: c.time, value: c.volume, color: c.close >= c.open ? 'rgba(107, 232, 154, .35)' : 'rgba(242, 135, 107, .35)' }; }
+  function volBar(c) { return { time: c.time, value: c.volume, color: c.close >= c.open ? 'rgba(' + window.HL.theme.upRgb + ', .35)' : 'rgba(' + window.HL.theme.downRgb + ', .35)' }; }
 
   function drawCandles(list, coin, interval) {
     ensureChart();

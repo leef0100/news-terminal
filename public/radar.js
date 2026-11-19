@@ -9,15 +9,15 @@
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
-  var I = window.Indicators, HL = window.HL;
+  var I = window.Indicators, HL = window.HL, T = HL.theme;
   var INTERVALS = ['15m', '1h', '4h', '1d'];
   var HEAT_VENUES = ['Binance', 'Bybit', 'Hyperliquid'];
   var LINES = [
-    { id: 'ema9', label: 'EMA 9', color: '#F7D774', period: 9 },
-    { id: 'ema21', label: 'EMA 21', color: '#86D3F7', period: 21 },
-    { id: 'ema50', label: 'EMA 50', color: '#CFC0F7', period: 50 },
-    { id: 'ema200', label: 'EMA 200', color: '#F5B49A', period: 200 },
-    { id: 'vwap', label: 'VWAP', color: '#FFFFFF' }
+    { id: 'ema9', label: 'EMA 9', color: T.ema9, period: 9 },
+    { id: 'ema21', label: 'EMA 21', color: T.ema21, period: 21 },
+    { id: 'ema50', label: 'EMA 50', color: T.ema50, period: 50 },
+    { id: 'ema200', label: 'EMA 200', color: T.ema200, period: 200 },
+    { id: 'vwap', label: 'VWAP', color: T.vwap }
   ];
   var LAYERS = [
     { id: 'levels', label: 'Key levels' },
@@ -165,21 +165,21 @@
     var chartTime = window.HL.chartTime(function () { return st.interval; });
     st.chart = LC.createChart($('rChart'), {
       autoSize: true,
-      layout: { background: { color: 'transparent' }, textColor: '#C2D4CA', fontFamily: 'Inter, system-ui, sans-serif' },
-      grid: { vertLines: { color: 'rgba(50, 80, 64, .45)' }, horzLines: { color: 'rgba(50, 80, 64, .45)' } },
-      rightPriceScale: { borderColor: '#325040' },
-      timeScale: { borderColor: '#325040', timeVisible: true, secondsVisible: false, tickMarkFormatter: chartTime.tickMarkFormatter },
+      layout: { background: { color: 'transparent' }, textColor: window.HL.theme.text, fontFamily: 'Inter, system-ui, sans-serif' },
+      grid: { vertLines: { color: window.HL.theme.grid }, horzLines: { color: window.HL.theme.grid } },
+      rightPriceScale: { borderColor: window.HL.theme.border },
+      timeScale: { borderColor: window.HL.theme.border, timeVisible: true, secondsVisible: false, tickMarkFormatter: chartTime.tickMarkFormatter },
       localization: { timeFormatter: chartTime.timeFormatter },
       crosshair: { mode: 0 }
     });
-    st.candles = st.chart.addCandlestickSeries({ upColor: '#6BE89A', borderUpColor: '#6BE89A', wickUpColor: '#6BE89A', downColor: '#F2876B', borderDownColor: '#F2876B', wickDownColor: '#F2876B' });
+    st.candles = st.chart.addCandlestickSeries({ upColor: window.HL.theme.up, borderUpColor: window.HL.theme.up, wickUpColor: window.HL.theme.up, downColor: window.HL.theme.down, borderDownColor: window.HL.theme.down, wickDownColor: window.HL.theme.down });
     st.volume = st.chart.addHistogramSeries({ priceScaleId: '', priceFormat: { type: 'volume' }, lastValueVisible: false, priceLineVisible: false });
     st.volume.priceScale().applyOptions({ scaleMargins: { top: 0.86, bottom: 0 } });
     LINES.forEach(function (l) {
       st.lines[l.id] = st.chart.addLineSeries({ color: l.color, lineWidth: l.id === 'vwap' ? 2 : 1, lineStyle: l.id === 'vwap' ? 2 : 0, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false });
     });
   }
-  function volBar(c) { return { time: local(c.time), value: c.volume, color: c.close >= c.open ? 'rgba(107, 232, 154, .3)' : 'rgba(242, 135, 107, .3)' }; }
+  function volBar(c) { return { time: local(c.time), value: c.volume, color: c.close >= c.open ? 'rgba(' + window.HL.theme.upRgb + ', .3)' : 'rgba(' + window.HL.theme.downRgb + ', .3)' }; }
   function clearChart() {
     st.shown = '';
     if (!st.candles) return;
@@ -233,7 +233,7 @@
       st.priceLines.forEach(function (pl) { st.candles.removePriceLine(pl); });
       st.priceLines = [];
       shownLevels.forEach(function (l) {
-        var color = { pivot: '#9DB5A8', prior: '#F7D774', profile: '#7EEBD0', swing: l.side === 'above' ? '#F7A58E' : '#6BE89A', wall: '#86D3F7' }[l.kind];
+        var color = { pivot: T.pivot, prior: T.prior, profile: T.profile, swing: l.side === 'above' ? T.down : T.up, wall: T.wall }[l.kind];
         st.priceLines.push(st.candles.createPriceLine({ price: l.price, color: color, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: narrow ? '' : l.label }));
       });
     }
@@ -289,7 +289,7 @@
         if (!r) return;
         var v = Math.max(b.long, b.short) / st.liq.max;
         if (v < 0.08) return;
-        g.fillStyle = 'rgba(247, 199, 104, ' + (0.05 + v * 0.3).toFixed(3) + ')';
+        g.fillStyle = 'rgba(' + window.HL.theme.liqRgb + ', ' + (0.05 + v * 0.3).toFixed(3) + ')';
         g.fillRect(0, r.top, paneW, r.height);
       });
     }
@@ -300,7 +300,7 @@
         if (!r || !b.vol) return;
         var isPoc = Math.abs(b.mid - st.profile.poc) < st.profile.step / 2;
         var inValue = b.mid <= st.profile.vah && b.mid >= st.profile.val;
-        g.fillStyle = isPoc ? 'rgba(126, 235, 208, .6)' : inValue ? 'rgba(126, 235, 208, .26)' : 'rgba(126, 235, 208, .12)';
+        g.fillStyle = isPoc ? 'rgba(' + window.HL.theme.profileRgb + ', .6)' : inValue ? 'rgba(' + window.HL.theme.profileRgb + ', .26)' : 'rgba(' + window.HL.theme.profileRgb + ', .12)';
         g.fillRect(0, r.top + 0.5, Math.max(1, b.vol / st.profile.max * maxW), Math.max(1, r.height - 1));
       });
     }
@@ -318,8 +318,8 @@
           g.fillRect(paneW - len, r.top + 0.5, len, Math.max(1.5, r.height - 1));
         });
       };
-      draw(st.depth.bids, 'rgba(107, 232, 154, .22)', 'rgba(107, 232, 154, .6)');
-      draw(st.depth.asks, 'rgba(242, 135, 107, .22)', 'rgba(242, 135, 107, .6)');
+      draw(st.depth.bids, 'rgba(' + window.HL.theme.upRgb + ', .22)', 'rgba(' + window.HL.theme.upRgb + ', .6)');
+      draw(st.depth.asks, 'rgba(' + window.HL.theme.downRgb + ', .22)', 'rgba(' + window.HL.theme.downRgb + ', .6)');
     }
     g.restore();
   }
@@ -476,7 +476,7 @@
         // Area follows volume on a compressed scale, so small markets stay readable.
         b.style.flexGrow = String(Math.max(1, Math.round(Math.sqrt(m.volume24hUsd / maxV) * 12)));
         var a = Math.min(1, Math.abs(m.change24hPct) / 8) * 0.3 + 0.06;
-        b.style.background = m.change24hPct >= 0 ? 'rgba(107, 232, 154, ' + a.toFixed(2) + ')' : 'rgba(242, 135, 107, ' + a.toFixed(2) + ')';
+        b.style.background = m.change24hPct >= 0 ? 'rgba(' + window.HL.theme.upRgb + ', ' + a.toFixed(2) + ')' : 'rgba(' + window.HL.theme.downRgb + ', ' + a.toFixed(2) + ')';
         b.appendChild(el('b', null, m.coin));
         b.appendChild(el('span', 'mono', signed(m.change24hPct, 1)));
         b.title = m.coin + ': $' + px(m.mark) + ', volume ' + money(m.volume24hUsd) + ', open interest ' + money(m.openInterestUsd);
@@ -504,7 +504,7 @@
         if (f) {
           // Capped so the light text keeps at least 4.5:1 contrast on the strongest cells.
           var a = Math.min(1, Math.abs(f.annualPct) / 40) * 0.24 + 0.06;
-          td.style.background = f.annualPct >= 0 ? 'rgba(107, 232, 154, ' + a.toFixed(2) + ')' : 'rgba(242, 135, 107, ' + a.toFixed(2) + ')';
+          td.style.background = f.annualPct >= 0 ? 'rgba(' + window.HL.theme.upRgb + ', ' + a.toFixed(2) + ')' : 'rgba(' + window.HL.theme.downRgb + ', ' + a.toFixed(2) + ')';
           td.title = (f.rate8h * 100).toFixed(4) + '% per 8 hours' + (f.intervalHours && f.intervalHours !== 8 ? ' (paid every ' + f.intervalHours + (f.intervalHours === 1 ? ' hour)' : ' hours)') : '');
         }
         tr.appendChild(td);
@@ -522,7 +522,7 @@
     list.forEach(function (f) {
       var c = el('span', 'fh');
       var a = max > 0 ? Math.abs(f.rate) / max * 0.75 + 0.1 : 0.1;
-      c.style.background = f.rate >= 0 ? 'rgba(107, 232, 154, ' + a.toFixed(2) + ')' : 'rgba(242, 135, 107, ' + a.toFixed(2) + ')';
+      c.style.background = f.rate >= 0 ? 'rgba(' + window.HL.theme.upRgb + ', ' + a.toFixed(2) + ')' : 'rgba(' + window.HL.theme.downRgb + ', ' + a.toFixed(2) + ')';
       c.title = new Date(f.time).toLocaleString() + ': ' + signed(f.rate * 24 * 365 * 100, 1) + ' a year';
       box.appendChild(c);
     });
