@@ -525,3 +525,17 @@ a.live:hover { color: var(--text); }
 .siteFoot a { color: var(--accent); }
 #view-home:not([hidden]) ~ .siteFoot { margin-top: 0; }
 .tabs { overflow-x: auto; scrollbar-width: none; max-width: min(100%, 980px); } .tabs::-webkit-scrollbar { display: none; } .tabs a { padding: 0 11px; }
+
+/* ---------- paper trading ---------- */
+.ppGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 14px; }
+.ppMarket { display: flex; flex-direction: column; gap: 8px; padding: 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--bar); }
+.ppTop { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.ppTicket { display: flex; flex-direction: column; gap: 10px; }
+.ppTag { align-self: flex-start; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 3px 8px; border-radius: 6px; background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn-line); }
+.ppSides { display: flex; } .ppSides button { flex: 1; font-family: var(--sans); font-size: 13px; }
+.ppForm { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ppForm label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-3); }
+.ppForm input { height: 44px; padding: 0 12px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--panel); color: var(--text); font-family: var(--mono); font-size: 14px; width: 100%; min-width: 0; }
+.ppGo { min-height: 44px; }
+.ppGo:disabled { opacity: .5; }
+#ppFoot { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }

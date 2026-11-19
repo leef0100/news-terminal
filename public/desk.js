@@ -228,7 +228,7 @@
   var pal = { items: [], shown: [], at: 0, feed: [], markets: [] };
   var PAGES = [
     ['Home', '#home', 'Front page'], ['News', '#news', 'The live feed'], ['Breaking', '#breaking', 'The most immediate stories, with chat'],
-    ['Stocks', '#stocks', 'Indexes, companies, charts and financial reports'], ['Calendar', '#calendar', 'Earnings, IPOs, economic releases and central banks'], ['Private', '#private', 'IPO pipeline and private fundraising filings'], ['Indexes', '#indexes', 'AI infrastructure: GPU, compute, inference, energy, data centers'], ['Funds', '#funds', 'What large managers and insiders reported to the SEC'], ['Voices', '#voices', 'Market writers and their latest pieces'],
+    ['Stocks', '#stocks', 'Indexes, companies, charts and financial reports'], ['Calendar', '#calendar', 'Earnings, IPOs, economic releases and central banks'], ['Private', '#private', 'IPO pipeline and private fundraising filings'], ['Indexes', '#indexes', 'AI infrastructure: GPU, compute, inference, energy, data centers'], ['Paper trade', '#paper', 'Go long or short on the indexes with pretend money'], ['Funds', '#funds', 'What large managers and insiders reported to the SEC'], ['Voices', '#voices', 'Market writers and their latest pieces'],
     ['Radar', '#radar', 'Crypto chart, levels, heatmaps and confluence'], ['Crypto', '#markets', 'Order book, trades and every crypto market'], ['My panel', '#panel', 'Your own feed of X accounts'], ['Status', '#status', 'Where every number comes from']
   ];
   function buildPalette() {

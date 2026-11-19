@@ -55,6 +55,23 @@ Also worth adding because they matter to the same reader:
   not copied or summarised from behind it. Opinions are shown as the author's, with a link,
   and are not turned into "calls" or scores by us.
 
+## 4. A compute exchange
+
+The idea: let people go long or short on compute itself (GPU, compute, inference, energy
+and data-center indexes), which today can only be traded indirectly through shares.
+
+- **Built: paper trading.** Long and short on every Halftone index with pretend money, kept
+  in the browser. It demonstrates the product without funds, custody or regulation.
+- **Next, if pursued with real money:** launch the markets on an exchange that lets outside
+  teams deploy perpetual contracts (Hyperliquid does), so matching, custody and liquidations
+  are handled there. Needs a token stake, a reliable price feed operated for each index, a
+  legal entity, and legal advice first: leveraged derivatives are regulated, and venues of
+  this kind generally exclude US users.
+- **The hard part is the index, not the exchange.** A tradable index needs frequent,
+  tamper-resistant inputs from many sources. Indexes built from a few price lists that
+  change rarely can be moved cheaply and settled unfairly. Deepening the inputs comes before
+  any real market.
+
 ## Suggested order
 
 1. Fund holdings, insider trades and large stakes (data source already connected).
