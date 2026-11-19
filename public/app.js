@@ -28,7 +28,7 @@
     chat: 'M21 15a2 2 0 0 1-2 2H8l-5 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',
     star: 'M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 17l-5.2 2.7 1-5.9L3.5 9.7l5.9-.8z'
   };
-  var VIEWS = ['home', 'news', 'breaking', 'stocks', 'markets', 'radar', 'calendar', 'private', 'panel', 'status'];
+  var VIEWS = ['home', 'news', 'breaking', 'stocks', 'markets', 'radar', 'calendar', 'private', 'indexes', 'funds', 'voices', 'panel', 'status'];
   var MAX_ITEMS = 400;
   var PAGE = 60;
   var HOUR = 3600000;

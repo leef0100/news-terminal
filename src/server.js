@@ -22,6 +22,8 @@ import { createHyperliquid, validCoin, INTERVALS } from './hyperliquid.js';
 import { createRadar } from './radar.js';
 import { createXPanel, validHandle } from './xpanel.js';
 import { createTradfi } from './tradfi/index.js';
+import { createIndexes } from './indexes/index.js';
+import { createVoices } from './voices/index.js';
 import { demoMarketFetch } from './ingest/demo-markets.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -46,6 +48,9 @@ export async function createApp({ demo = false, chatOff = false, xToken = '', xD
   const xpanel = createXPanel({ token: xToken, demo, dailyPosts: xDailyPosts });
   // Stocks, indexes, company reports, calendars and private markets.
   const tradfi = createTradfi({ demo, env: process.env });
+  // House indexes for AI infrastructure, and a curated list of market writers.
+  const indexes = createIndexes({ demo, env: process.env, tradfi: tradfi.backend, hl });
+  const voices = createVoices({ demo, env: process.env });
   const radar = createRadar({ fetchImpl: marketFetch, hl });
   const poller = ingests && !demo ? createPoller({ sources: config.sources, store, pollSeconds: config.pollSeconds }) : null;
   const hasRoom = (room) => room === 'general' || Boolean(store.get(room));
@@ -264,7 +269,7 @@ export async function createApp({ demo = false, chatOff = false, xToken = '', xD
         feed: { stories: store.size(), newestStory: newest || null, sources },
         market: { ...market, exchange: hl.health() },
         x: xpanel.health(),
-        tradfi: tradfi.health(),
+        tradfi: { sources: [...tradfi.health().sources, ...indexes.health().sources, ...voices.health().sources] },
         viewers: { feed: clients.size, chat: roomCount, limit: sseMax }
       });
     });
@@ -272,6 +277,8 @@ export async function createApp({ demo = false, chatOff = false, xToken = '', xD
     // A viewer's own panel of X accounts. The list of names is the whole request, so two
     // people following the same accounts share one cached answer.
     app.use('/api/tradfi', tradfi.router);
+    app.use('/api/indexes', indexes.router);
+    app.use('/api/voices', voices.router);
 
     app.get('/api/x', async (req, res) => {
       const asked = String(req.query.handles || '').split(',').map((h) => h.trim().replace(/^@/, '')).filter(Boolean);
@@ -457,6 +464,8 @@ export async function createApp({ demo = false, chatOff = false, xToken = '', xD
       if (stopFeed) stopFeed();
       xpanel.stop();
       tradfi.stop();
+      indexes.stop();
+      voices.stop();
       for (const res of clients) res.end();
       clients.clear();
       for (const set of roomClients.values()) for (const res of set) res.end();

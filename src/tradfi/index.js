@@ -141,5 +141,7 @@ export function createTradfi({ demo = false, env = {}, fetchImpl = fetch, now = 
 
   router.use((_req, res) => res.status(404).set('cache-control', 'no-store').json({ error: 'Not found' }));
 
-  return { router, health: () => backend.health(), stop: () => backend.stop() };
+  // `backend` lets other modules on this server (the indexes) reuse company data and its
+  // caches and request budgets instead of fetching the same things twice.
+  return { router, backend, health: () => backend.health(), stop: () => backend.stop() };
 }

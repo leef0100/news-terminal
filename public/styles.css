@@ -524,3 +524,4 @@ a.live:hover { color: var(--text); }
 .siteFoot p { max-width: 110ch; }
 .siteFoot a { color: var(--accent); }
 #view-home:not([hidden]) ~ .siteFoot { margin-top: 0; }
+.tabs { overflow-x: auto; scrollbar-width: none; max-width: min(100%, 980px); } .tabs::-webkit-scrollbar { display: none; } .tabs a { padding: 0 11px; }
