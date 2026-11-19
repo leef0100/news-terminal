@@ -7,18 +7,20 @@
     { id: 'all', label: 'Everything', title: 'Live feed' },
     { id: 'crypto', label: 'Crypto', title: 'Crypto' },
     { id: 'markets', label: 'Markets', title: 'Markets' },
+    { id: 'deals', label: 'Deals', title: 'Deals, IPOs and fundraising' },
     { id: 'business', label: 'Business', title: 'Business' },
     { id: 'technology', label: 'Technology', title: 'Technology' },
     { id: 'macro', label: 'Macro', title: 'Macro' },
     { id: 'politics', label: 'Politics', title: 'Politics' },
     { id: 'world', label: 'World', title: 'World' }
   ];
-  var KIND_NAME = { crypto: 'Crypto', markets: 'Markets', business: 'Business', technology: 'Technology', macro: 'Macro', politics: 'Politics', world: 'World' };
+  var KIND_NAME = { deals: 'Deals', crypto: 'Crypto', markets: 'Markets', business: 'Business', technology: 'Technology', macro: 'Macro', politics: 'Politics', world: 'World' };
   var ICONS = {
     all: 'M12 3 3 8l9 5 9-5-9-5z M3 13l9 5 9-5 M3 18l9 5 9-5',
     crypto: 'M12 3a9 9 0 1 0 0 18a9 9 0 0 0 0-18z M9.5 8h4a2 2 0 0 1 0 4h-4z M9.5 12h4.5a2 2 0 0 1 0 4H9.5z M9.5 8v8 M11.5 6.5V8 M11.5 16v1.5',
     markets: 'M3 17l6-6 4 4 8-8 M15 7h6v6',
     business: 'M4 8h16v11H4z M9 8V5h6v3 M4 13h16',
+    deals: 'M3 12l4-4 4 3 3-3 7 6 M3 12v6h18v-6 M8 18v-3 M12 18v-4 M16 18v-3',
     technology: 'M7 7h10v10H7z M10 3v4 M14 3v4 M10 17v4 M14 17v4 M3 10h4 M3 14h4 M17 10h4 M17 14h4',
     macro: 'M5 20V10 M11 20V4 M17 20v-7 M22 20H2',
     politics: 'M3 21h18 M5 21V10 M9.5 21V10 M14.5 21V10 M19 21V10 M2 10h20L12 3z',

@@ -7,7 +7,7 @@
   --warn: #8A5A00; --warn-bg: #FFF3D2; --warn-line: #E6CF8F;
   --up: #0B7A42; --down: #BF3B2B; --down-bg: #FBE7E2;
   --glass: rgba(255, 255, 255, .88); --scrim: rgba(15, 42, 29, .35); --shadow: 0 1px 2px rgba(15, 42, 29, .05), 0 6px 20px rgba(15, 42, 29, .06);
-  --k-all: #0B7A42; --k-crypto: #0B7A42; --k-markets: #4B7512; --k-business: #8A6500; --k-technology: #1B6CA6; --k-macro: #0B7868; --k-politics: #B04E26; --k-world: #6748BD;
+  --k-all: #0B7A42; --k-crypto: #0B7A42; --k-markets: #4B7512; --k-business: #8A6500; --k-deals: #A1367A; --k-technology: #1B6CA6; --k-macro: #0B7868; --k-politics: #B04E26; --k-world: #6748BD;
   --serif: "Instrument Serif", "Iowan Old Style", Georgia, serif;
   --sans: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
@@ -181,7 +181,7 @@ body.compact #feed { gap: 6px; }
 .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px; background: var(--accent-bg); color: var(--accent); }
 .pill.warn { background: var(--warn-bg); color: var(--warn); }
 .pill.quiet { background: var(--bar); color: var(--text-2); font-weight: 500; }
-.k-all { --c: var(--k-all); } .k-crypto { --c: var(--k-crypto); } .k-markets { --c: var(--k-markets); } .k-business { --c: var(--k-business); } .k-technology { --c: var(--k-technology); } .k-macro { --c: var(--k-macro); } .k-politics { --c: var(--k-politics); } .k-world { --c: var(--k-world); }
+.k-all { --c: var(--k-all); } .k-crypto { --c: var(--k-crypto); } .k-markets { --c: var(--k-markets); } .k-business { --c: var(--k-business); } .k-deals { --c: var(--k-deals); } .k-technology { --c: var(--k-technology); } .k-macro { --c: var(--k-macro); } .k-politics { --c: var(--k-politics); } .k-world { --c: var(--k-world); }
 
 .dText { font-family: var(--serif); font-size: 24px; line-height: 1.15; }
 .tok { display: flex; flex-direction: column; gap: 10px; width: 100%; padding: 16px; border-radius: 16px; border: 1px solid var(--line); background: var(--panel); color: var(--text); text-align: left; }

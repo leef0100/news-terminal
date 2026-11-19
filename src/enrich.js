@@ -12,6 +12,8 @@ const URGENT = /\b(breaking|just in|urgent|halts?|halted|hack(ed|s)?|exploit(ed)
 // Topic rules, checked in order; the first match wins, then the source's own topic.
 const TOPICS = [
   ['crypto', /\b(bitcoin|btc|ethereum|ether|solana|crypto\w*|tokens?|stablecoins?|memecoins?|defi|blockchain|altcoins?|airdrops?|on-?chain|nft)\b/i],
+  // Deals come before technology and business: "AI startup raises $2bn" is read for the raise.
+  ['deals', /\b(IPOs?|go(es|ing)? public|public offering|SPACs?|merger|mergers|acquisitions?|acquires?|acquired|to buy|buyout|takeover|funding round|raises? \$[\d.]+|raised \$[\d.]+|Series [A-H]|valuation|valued at|venture capital|private equity|unicorns?)\b/i],
   ['technology', /\b(AI|A\.I\.|artificial intelligence|chips?|chipmakers?|semiconductors?|software|startups?|cyber\w*|data cent(er|re)s?|cloud|robots?|robotics|smartphones?|quantum|tech)\b/i],
   ['business', /\b(CEO|CFO|chief executive|earnings|merger|acquisition|acquires?|buyout|takeover|layoffs?|IPO|revenue|profits?|bankrupt\w*|board|shareholders?|antitrust)\b/i],
   ['markets', /\b(stocks?|shares|S&P|Nasdaq|Dow|equit(y|ies)|bonds?|yields?|oil|gold|commodit(y|ies)|rall(y|ies)|sell-?off|futures|Wall Street|investors?)\b/i],

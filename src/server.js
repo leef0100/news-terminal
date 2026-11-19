@@ -39,7 +39,8 @@ export async function createApp({ demo = false, chatOff = false, xToken = '', xD
 
   const matcher = createTokenMatcher(demo ? { fetchImpl: demoFetch() } : {});
   const marketFetch = demo ? demoMarketFetch() : fetch;
-  const hl = createHyperliquid({ fetchImpl: marketFetch });
+  // Demo data is made here, not fetched, so the exchange's allowance does not apply to it.
+  const hl = createHyperliquid({ fetchImpl: marketFetch, ...(demo ? { weightPerMinute: 1e9 } : {}) });
   const xpanel = createXPanel({ token: xToken, demo, dailyPosts: xDailyPosts });
   // Stocks, indexes, company reports, calendars and private markets.
   const tradfi = createTradfi({ demo, env: process.env });

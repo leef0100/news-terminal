@@ -17,6 +17,8 @@ const SCRIPT = [
   ['biz', 'Sample headline: Acme Motors board ousts founder in surprise vote'],
   ['tech', 'Sample headline: Acme Motors ousts founder after surprise board vote'],
   ['world', 'Sample headline: Central bank holds interest rates, signals cuts next quarter'],
+  ['biz', 'Sample headline: Globex files for IPO seeking a $2 billion valuation'],
+  ['tech', 'Sample headline: Initech robotics unit raises $400 million in new funding round'],
   ['crypto', 'Sample headline: Major exchange to list $ROCKET spot pairs at 12:00 UTC'],
   ['tech', 'Sample headline: Globex unveils AI chip, claims record speed'],
   ['x2', 'Sample post: rotating into AI agent names this week, watching $BYTE'],
