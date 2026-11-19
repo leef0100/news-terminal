@@ -131,7 +131,7 @@
     {
       "id": "fed-press",
       "name": "Federal Reserve",
-      "url": "https://www.federalreserve.gov/feeds/press_all.xml",
+      "url": "https://www.federalreserve.gov/feeds/press_bcreg.xml",
       "kind": "wire",
       "topic": "macro"
     },

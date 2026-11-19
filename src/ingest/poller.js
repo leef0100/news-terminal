@@ -31,7 +31,9 @@ export function createPoller({ sources, store, pollSeconds = 20, fetchImpl = fet
       st.lastOk = now();
     } catch (err) {
       st.ok = false;
-      st.error = String(err.message || err);
+      // Node reports every network failure as "fetch failed"; the reason is one level down.
+      const why = err?.cause?.code || err?.cause?.message;
+      st.error = String(err.message || err) + (why ? ' (' + why + ')' : '');
       log.warn(`[feed] ${source.name}: ${st.error}`);
     }
     st.lastPoll = now();

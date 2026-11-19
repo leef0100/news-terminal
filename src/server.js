@@ -8,6 +8,8 @@ import compression from 'compression';
 import { readFileSync } from 'node:fs';
 import { gzipSync } from 'node:zlib';
 import { createHash } from 'node:crypto';
+import net from 'node:net';
+import dns from 'node:dns';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { createStore } from './store.js';
@@ -129,12 +131,12 @@ export async function createApp({ demo = false, chatOff = false, xToken = '', xD
       'content-security-policy': [
         "default-src 'self'",
         // X's own embed script and frames, used by My panel only after the viewer asks for them.
-        "script-src 'self' https://platform.x.com https://platform.twitter.com",
+        "script-src 'self' https://platform.x.com https://platform.twitter.com https://syndication.twitter.com https://cdn.syndication.twimg.com",
         "frame-src https://platform.x.com https://platform.twitter.com https://syndication.twitter.com https://x.com https://twitter.com",
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src 'self' https://fonts.gstatic.com",
-        "img-src 'self' data:",
-        "connect-src 'self' https://api.hyperliquid.xyz wss://api.hyperliquid.xyz",
+        "img-src 'self' data: https://*.twimg.com https://syndication.twitter.com https://platform.x.com https://platform.twitter.com",
+        "connect-src 'self' https://api.hyperliquid.xyz wss://api.hyperliquid.xyz https://syndication.twitter.com https://cdn.syndication.twimg.com",
         "object-src 'none'",
         "base-uri 'self'",
         'frame-ancestors ' + frameAncestors
@@ -465,6 +467,11 @@ export async function createApp({ demo = false, chatOff = false, xToken = '', xD
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  // Node gives each address family a quarter of a second to connect before trying the next,
+  // which is too short behind a VPN or on a slow line: every outside request then fails with
+  // "fetch failed". Give connections longer, and try IPv4 first, where broken IPv6 is common.
+  net.setDefaultAutoSelectFamilyAttemptTimeout?.(2500);
+  dns.setDefaultResultOrder?.('ipv4first');
   const demo = process.argv.includes('--demo') || process.env.DEMO === '1';
   const role = ['all', 'web', 'ingest'].includes(process.env.ROLE) ? process.env.ROLE : 'all';
   const config = JSON.parse(readFileSync(path.join(root, 'config', 'sources.json'), 'utf8'));

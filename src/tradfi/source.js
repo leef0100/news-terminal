@@ -171,7 +171,7 @@ export function createSource({
     })()
       .catch((raw) => {
         // Whatever went wrong is reported without the address that was asked for.
-        const error = raw?.publicMessage ? raw : Object.assign(new Error(redact(raw?.message || raw)), { name: raw?.name || 'Error' });
+        const error = raw?.publicMessage ? raw : Object.assign(new Error(redact((raw?.message || raw) + (raw?.cause?.code ? ' (' + raw.cause.code + ')' : ''))), { name: raw?.name || 'Error' });
         failures.set(key, { at: now(), error });
         if (failures.size > maxEntries) failures.delete(failures.keys().next().value);
         // A refusal by our own budget is not a fault of the service, so it is not
