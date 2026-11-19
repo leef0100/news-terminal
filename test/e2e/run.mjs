@@ -235,6 +235,17 @@ await p.goto(BASE + '/#panel');
 await p.waitForSelector('#xpEmpty:not([hidden])');
 const addHandle = async (v) => { await p.$eval('#xpInput', (n, val) => { n.value = val; }, v); await p.evaluate(() => document.querySelector('#xpForm button').click()); await sleep(150); };
 await addHandle('@first_person'); await addHandle('https://x.com/SecondPerson/status/1'); await addHandle('first_person'); await addHandle('not a name');
+// Free mode first: X's own embeds, one column per account, only after the viewer asks.
+const xScripts = () => p.evaluate(() => [...document.scripts].filter((x) => /platform\.x\.com/.test(x.src)).length);
+check('panel: nothing is loaded from X until the viewer asks', (await xScripts()) === 0 && !(await p.$eval('#xpGate', (n) => n.hidden)) && (await p.$$('#xpDeck .xpCol')).length === 0);
+await p.setRequestInterception(true);
+const xStub = (r) => { if (/platform\.x\.com\/widgets\.js/.test(r.url())) r.respond({ status: 200, contentType: 'application/javascript', body: 'window.twttr={widgets:{createTimeline:function(src,el){var d=document.createElement("div");d.className="stubTimeline";d.textContent="timeline:"+src.screenName;el.appendChild(d);}}};' }); else r.continue(); };
+p.on('request', xStub);
+await p.click('#xpAllow');
+await p.waitForFunction(() => document.querySelectorAll('#xpDeck .stubTimeline').length === 2, { timeout: 8000 });
+check('panel: each account gets a column drawn by X\'s own embed', (await p.$$eval('#xpDeck .stubTimeline', (n) => n.map((x) => x.textContent).join())) === 'timeline:first_person,timeline:SecondPerson' && /signed in to X/.test(await p.$eval('#xpDeckNote', (n) => n.textContent)));
+p.off('request', xStub); await p.setRequestInterception(false);
+await p.evaluate(() => [...document.querySelectorAll('#xpMode button')].find((b) => /merged/.test(b.textContent)).click());
 await p.waitForFunction(() => document.querySelectorAll('#xpPosts .xpPost').length === 2, { timeout: 8000 });
 const xpText = await p.$eval('#view-panel', (n) => n.innerText);
 check('panel: usernames can be added as @name or a pasted link, and bad or repeated ones are refused', (await p.$$('#xpList .xpAcct')).length === 2 && /2 of 20/.test(xpText) && /SecondPerson/.test(xpText));
@@ -244,7 +255,7 @@ check('panel: picking an account shows only its posts', (await p.$$('#xpPosts .x
 await p.reload(); await p.waitForFunction(() => document.querySelectorAll('#xpList .xpAcct').length === 2, { timeout: 8000 });
 await p.evaluate(() => document.querySelector('#xpList .xpRemove').click()); await sleep(150);
 check('panel: the list is remembered and accounts can be removed', (await p.$$('#xpList .xpAcct')).length === 1);
-await p.evaluate(() => localStorage.removeItem('nt.xpanel'));
+await p.evaluate(() => { localStorage.removeItem('nt.xpanel'); localStorage.removeItem('nt.xmode'); localStorage.removeItem('nt.xembed'); });
 await p.goto(BASE + '/#status');
 await p.waitForFunction(() => document.querySelectorAll('#stFeeds tr').length > 3 && document.querySelectorAll('#stVenues tr').length === 6, { timeout: 8000 });
 const stText = await p.$eval('#view-status', (n) => n.innerText);

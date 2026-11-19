@@ -127,7 +127,9 @@ export async function createApp({ demo = false, xToken = '', xDailyPosts = 2000,
       'referrer-policy': 'strict-origin-when-cross-origin',
       'content-security-policy': [
         "default-src 'self'",
-        "script-src 'self'",
+        // X's own embed script and frames, used by My panel only after the viewer asks for them.
+        "script-src 'self' https://platform.x.com https://platform.twitter.com",
+        "frame-src https://platform.x.com https://platform.twitter.com https://syndication.twitter.com https://x.com https://twitter.com",
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
         "font-src 'self' https://fonts.gstatic.com",
         "img-src 'self' data:",

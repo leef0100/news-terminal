@@ -10,7 +10,10 @@
     return n;
   }
   var MAX = 20;
-  var st = { handles: [], only: '', data: null, timer: null, onPage: false, seq: 0 };
+  // Two ways to read: "deck" is X's own embedded timelines, one column per account, free
+  // and shown by X to anyone signed in to X; "feed" is one merged list through the paid API.
+  var st = { handles: [], only: '', data: null, timer: null, onPage: false, seq: 0, mode: 'deck', allowed: false, drawn: '', watcher: null };
+  try { st.allowed = localStorage.getItem('nt.xembed') === 'yes'; if (localStorage.getItem('nt.xmode') === 'feed') st.mode = 'feed'; } catch (e) { /* ignore */ }
   try {
     var saved = JSON.parse(localStorage.getItem('nt.xpanel') || '[]');
     if (Array.isArray(saved)) st.handles = saved.filter(function (h) { return typeof h === 'string' && /^[A-Za-z0-9_]{1,15}$/.test(h); }).slice(0, MAX);
@@ -65,7 +68,7 @@
   function renderPosts() {
     var d = st.data, box = $('xpPosts'), empty = $('xpEmpty'), notice = $('xpNotice');
     var msg = '';
-    if (d && !d.enabled) msg = 'Live posts are switched off on this server. Reading X needs a paid X API key; once one is set, the accounts in your list appear here. Your list is saved in the meantime.';
+    if (d && !d.enabled) msg = 'The merged feed is switched off on this server: it reads X through X\'s paid service, which needs a key. "Columns from X" above is free and works now.';
     else if (d && d.demo) msg = 'Demo mode: these are placeholders, not real posts. Nothing here was said by the account named.';
     else if (d && d.paused === 'budget') msg = 'Today\'s limit on posts read from X has been reached, so the feed is paused until midnight UTC. Posts already loaded stay below.';
     else if (d && d.paused === 'rate') msg = 'X asked this server to slow down. The feed will resume shortly.';
@@ -101,9 +104,104 @@
     empty.textContent = why;
     $('xpAt').textContent = d && d.enabled && !d.demo ? 'Checked ' + new Date().toLocaleTimeString([], { hour12: false }) + ' · posts arrive within about a minute of being sent' : '';
   }
-  function render() { renderList(); renderPosts(); }
+  // ---------- deck: X's own embeds ----------
+  var scriptAsked = false;
+  function loadX(done) {
+    if (window.twttr && window.twttr.widgets) return done();
+    if (!scriptAsked) {
+      scriptAsked = true;
+      var sc = document.createElement('script');
+      sc.src = 'https://platform.x.com/widgets.js';
+      sc.async = true;
+      sc.onerror = function () { scriptAsked = false; $('xpDeckNote').hidden = false; $('xpDeckNote').textContent = 'X could not be reached from this browser. A content blocker may be stopping it.'; };
+      document.head.appendChild(sc);
+    }
+    var tries = 0, wait = setInterval(function () {
+      tries += 1;
+      if (window.twttr && window.twttr.widgets) { clearInterval(wait); done(); }
+      else if (tries > 60) clearInterval(wait);
+    }, 250);
+  }
+  function fillColumn(body) {
+    if (body.dataset.filled) return;
+    body.dataset.filled = '1';
+    loadX(function () {
+      window.twttr.widgets.createTimeline({ sourceType: 'profile', screenName: body.dataset.handle }, body, { height: 640, chrome: 'noheader nofooter', dnt: true, theme: 'light' });
+    });
+  }
+  function renderDeck(force) {
+    var shown = st.handles.filter(function (h) { return !st.only || h === st.only; });
+    $('xpGate').hidden = st.allowed;
+    $('xpRefresh').hidden = !st.allowed || !shown.length;
+    $('xpDeckNote').hidden = !st.allowed || !shown.length;
+    var key = st.allowed + '|' + shown.join(',');
+    if (!force && key === st.drawn) return;
+    st.drawn = key;
+    if (st.watcher) st.watcher.disconnect();
+    var deck = $('xpDeck'), frag = document.createDocumentFragment();
+    if (st.allowed) shown.forEach(function (h) {
+      var col = el('section', 'xpCol');
+      var head = el('div', 'xpColHead');
+      head.appendChild(el('b', null, '@' + h));
+      var a = el('a', 'link', 'Open on X');
+      a.href = 'https://x.com/' + encodeURIComponent(h); a.target = '_blank'; a.rel = 'noopener noreferrer';
+      head.appendChild(a);
+      col.appendChild(head);
+      var body = el('div', 'xpColBody');
+      body.dataset.handle = h;
+      col.appendChild(body);
+      frag.appendChild(col);
+    });
+    deck.replaceChildren(frag);
+    // A column is only asked for when it comes into view: twenty at once would be slow.
+    if (st.allowed && 'IntersectionObserver' in window) {
+      st.watcher = new IntersectionObserver(function (entries) { entries.forEach(function (en) { if (en.isIntersecting) fillColumn(en.target); }); }, { root: null, rootMargin: '200px' });
+      deck.querySelectorAll('.xpColBody').forEach(function (b) { st.watcher.observe(b); });
+    } else deck.querySelectorAll('.xpColBody').forEach(fillColumn);
+  }
+  function renderMode() {
+    var box = $('xpMode');
+    box.textContent = '';
+    [['deck', 'Columns from X (free)'], ['feed', 'One merged feed']].forEach(function (m) {
+      var b = el('button', st.mode === m[0] ? 'on' : '', m[1]);
+      b.type = 'button';
+      b.dataset.fk = 'xm-' + m[0];
+      b.setAttribute('aria-pressed', String(st.mode === m[0]));
+      b.addEventListener('click', function () {
+        st.mode = m[0];
+        try { localStorage.setItem('nt.xmode', m[0]); } catch (e) { /* ignore */ }
+        start();
+        refocus('xm-' + m[0]);
+      });
+      box.appendChild(b);
+    });
+  }
+  $('xpAllow').addEventListener('click', function () {
+    st.allowed = true;
+    try { localStorage.setItem('nt.xembed', 'yes'); } catch (e) { /* ignore */ }
+    renderDeck();
+    $('xpRefresh').focus();
+  });
+  $('xpRefresh').addEventListener('click', function () { renderDeck(true); });
+
+  function render() {
+    renderList();
+    renderMode();
+    var deck = st.mode === 'deck';
+    $('xpDeckBox').hidden = !deck;
+    $('xpPosts').hidden = deck;
+    if (deck) {
+      $('xpNotice').hidden = true;
+      $('xpEmpty').hidden = st.handles.length > 0;
+      $('xpEmpty').textContent = 'Add up to ' + MAX + ' X usernames on the right to build your own deck: founders, traders, reporters, anyone whose posts you want side by side.';
+      $('xpAt').textContent = '';
+      $('xpDeckBox').hidden = !st.handles.length;
+      renderDeck();
+    } else renderPosts();
+  }
 
   function load() {
+    if (st.mode !== 'feed') return;
     if (!st.handles.length) { st.data = null; render(); return; }
     var seq = ++st.seq;
     // Sorted, so two people with the same list share one cached answer.
@@ -133,6 +231,8 @@
     stop();
     if (!st.onPage || document.hidden) return;
     render();
+    // Only the merged feed asks this server for anything; the columns come from X itself.
+    if (st.mode !== 'feed') return;
     load();
     st.timer = setInterval(load, 10000);
   }

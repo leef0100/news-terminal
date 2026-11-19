@@ -382,6 +382,19 @@
   </div>
   <div class="cols">
     <main class="feed">
+      <div class="row xpModeRow">
+        <div id="xpMode" class="seg" role="group" aria-label="How posts are shown"></div>
+        <button id="xpRefresh" type="button" class="btn" hidden>Refresh columns</button>
+      </div>
+      <div id="xpDeckBox" hidden>
+        <div id="xpGate" class="emptyBox xpGate">
+          <p><b>Read posts straight from X, free.</b> Each account gets its own column, drawn by X itself. X shows posts only to people signed in to X in this browser, so sign in there first.</p>
+          <p class="muted small">Showing the columns loads content from X, which lets X see that this browser visited. Nothing is sent to X until you choose to.</p>
+          <div class="row"><button id="xpAllow" type="button" class="btn primary">Show posts from X</button><a class="btn" href="https://x.com/login" target="_blank" rel="noopener noreferrer">Sign in to X</a></div>
+        </div>
+        <p id="xpDeckNote" class="muted small" hidden>Columns are drawn by X. An empty column or "Nothing to see here" means this browser is not signed in to X: sign in, then press Refresh columns.</p>
+        <div id="xpDeck" class="xpDeck"></div>
+      </div>
       <p id="xpNotice" class="emptyBox notice" role="status" hidden></p>
       <div id="xpPosts" class="stack"></div>
       <p id="xpEmpty" class="emptyBox" hidden></p>

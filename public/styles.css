@@ -509,3 +509,13 @@ a.live:hover { color: var(--text); }
 #lhLev { flex-wrap: wrap; }
 @media (max-width: 520px) { #rIntervals { flex: 1 1 100%; } #rIntervals button { flex: 1; padding: 0 4px; } }
 @media (max-width: 620px) { #view-radar .tools { flex-wrap: wrap; max-width: 100%; min-width: 0; } #view-radar .tools .seg { flex: 1 1 100%; } #view-radar .tools .seg button { flex: 1; min-width: 0; } }
+
+/* my panel: columns drawn by X */
+.xpModeRow { justify-content: space-between; flex-wrap: wrap; margin-bottom: 12px; }
+.xpModeRow .seg button { padding: 0 12px; font-family: var(--sans); font-size: 13px; }
+.xpGate { display: flex; flex-direction: column; gap: 10px; text-align: left; }
+.xpGate .row { flex-wrap: wrap; }
+.xpDeck { display: flex; gap: 12px; overflow-x: auto; padding: 4px 2px 12px; scroll-snap-type: x proximity; }
+.xpCol { flex: 0 0 min(360px, 86vw); scroll-snap-align: start; border: 1px solid var(--line); border-radius: 14px; background: var(--panel); box-shadow: var(--shadow); overflow: hidden; }
+.xpColHead { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
+.xpColBody { min-height: 320px; max-height: 640px; overflow-y: auto; }
