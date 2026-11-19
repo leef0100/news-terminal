@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Playfair+Display:ital,wght@0,900;1,700;1,900&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="tradfi.css">
 </head>
 <body>
 <header class="nav">
@@ -20,8 +21,11 @@
     <a href="#home" data-view="home">Home</a>
     <a href="#news" data-view="news">News</a>
     <a href="#breaking" data-view="breaking">Breaking <span id="breakingCount" class="count" hidden></span></a>
+    <a href="#stocks" data-view="stocks">Stocks</a>
+    <a href="#markets" data-view="markets">Crypto</a>
     <a href="#radar" data-view="radar">Radar</a>
-    <a href="#markets" data-view="markets">Markets</a>
+    <a href="#calendar" data-view="calendar">Calendar</a>
+    <a href="#private" data-view="private">Private</a>
     <a href="#panel" data-view="panel">My panel</a>
     <a href="#status" data-view="status">Status</a>
   </nav>
@@ -386,6 +390,11 @@
   </div>
 </section>
 
+<!-- STOCKS, CALENDAR, PRIVATE: built by tradfi.js -->
+<section id="view-stocks" class="view" hidden></section>
+<section id="view-calendar" class="view" hidden></section>
+<section id="view-private" class="view" hidden></section>
+
 <!-- STATUS -->
 <section id="view-status" class="view" hidden>
   <div class="breakHead">
@@ -439,6 +448,7 @@
 <script src="markets.js"></script>
 <script src="desk.js"></script>
 <script src="panel.js"></script>
+<script src="tradfi.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

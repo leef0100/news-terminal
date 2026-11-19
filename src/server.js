@@ -19,6 +19,7 @@ import { createChat } from './chat.js';
 import { createHyperliquid, validCoin, INTERVALS } from './hyperliquid.js';
 import { createRadar } from './radar.js';
 import { createXPanel, validHandle } from './xpanel.js';
+import { createTradfi } from './tradfi/index.js';
 import { demoMarketFetch } from './ingest/demo-markets.js';
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
@@ -40,6 +41,8 @@ export async function createApp({ demo = false, xToken = '', xDailyPosts = 2000,
   const marketFetch = demo ? demoMarketFetch() : fetch;
   const hl = createHyperliquid({ fetchImpl: marketFetch });
   const xpanel = createXPanel({ token: xToken, demo, dailyPosts: xDailyPosts });
+  // Stocks, indexes, company reports, calendars and private markets.
+  const tradfi = createTradfi({ demo, env: process.env });
   const radar = createRadar({ fetchImpl: marketFetch, hl });
   const poller = ingests && !demo ? createPoller({ sources: config.sources, store, pollSeconds: config.pollSeconds }) : null;
   const hasRoom = (room) => room === 'general' || Boolean(store.get(room));
@@ -256,12 +259,15 @@ export async function createApp({ demo = false, xToken = '', xDailyPosts = 2000,
         feed: { stories: store.size(), newestStory: newest || null, sources },
         market: { ...market, exchange: hl.health() },
         x: xpanel.health(),
+        tradfi: tradfi.health(),
         viewers: { feed: clients.size, chat: roomCount, limit: sseMax }
       });
     });
 
     // A viewer's own panel of X accounts. The list of names is the whole request, so two
     // people following the same accounts share one cached answer.
+    app.use('/api/tradfi', tradfi.router);
+
     app.get('/api/x', async (req, res) => {
       const asked = String(req.query.handles || '').split(',').map((h) => h.trim().replace(/^@/, '')).filter(Boolean);
       if (asked.length > 20 || !asked.every(validHandle)) return refuse(res, 400, { error: 'Up to 20 usernames: letters, numbers and underscores only' });
@@ -443,6 +449,7 @@ export async function createApp({ demo = false, xToken = '', xDailyPosts = 2000,
       clearInterval(reseed);
       if (stopFeed) stopFeed();
       xpanel.stop();
+      tradfi.stop();
       for (const res of clients) res.end();
       clients.clear();
       for (const set of roomClients.values()) for (const res of set) res.end();
