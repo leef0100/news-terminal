@@ -1,0 +1,101 @@
+/* Indexes. Colour comes only from the theme's variables, so the page follows whatever theme
+   styles.css sets. Gains and losses always carry an arrow and a sign; colour only repeats them.
+   The six series colours of the capital spending bars are the theme's own category colours. */
+#view-indexes { --ix-up: var(--up, #1E8E4E); --ix-down: var(--down, #C8452C); --ix-s0: var(--k-technology); --ix-s1: var(--k-business); --ix-s2: var(--k-deals); --ix-s3: var(--k-macro); --ix-s4: var(--k-world); --ix-s5: var(--k-politics); min-width: 0; }
+#view-indexes :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#view-indexes .up { color: var(--ix-up); }
+#view-indexes .down { color: var(--ix-down); }
+.breakHead .kicker.ixKick { color: var(--accent); }
+.ixHeadNote { font-size: 13px; text-align: right; max-width: 60ch; }
+.ixPad { display: flex; flex-direction: column; gap: 16px; padding: 18px 24px 40px; min-width: 0; }
+.ixStack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.ixStack:empty { display: none; }
+.ixLede { max-width: 86ch; font-size: 15px; color: var(--text-2); margin: 0; }
+.ixBlock { min-width: 0; }
+.ixBody { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.ixNote { text-align: right; }
+.ixBlock .link, .ixMoreLink { display: inline-flex; align-items: center; min-height: 40px; }
+.ixBack { text-decoration: none; display: inline-flex; align-items: center; }
+
+/* the label every index carries, and its state */
+.ixTag { margin: 0; font-size: 11.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); }
+.ixTagRow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0; }
+.ixState { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--line-2); font-size: 11.5px; font-weight: 600; white-space: nowrap; color: var(--text-2); background: var(--bar); }
+.ixState::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); }
+.ixState-ok { color: var(--accent); border-color: var(--accent); background: var(--accent-bg); }
+.ixState-ok::before { background: var(--accent); }
+.ixState-off::before { background: transparent; border: 2px solid var(--text-3); box-sizing: border-box; }
+.ixState-pending { color: var(--warn); border-color: var(--warn-line); background: var(--warn-bg); }
+.ixState-pending::before { background: var(--warn); border-radius: 2px; }
+.ixState-error { color: var(--down); border-color: var(--down); background: var(--down-bg); }
+.ixState-error::before { background: var(--down); border-radius: 0; transform: rotate(45deg); }
+.ixWhy { margin: 0; padding: 8px 12px; border-radius: 10px; border: 1px dashed var(--line-2); background: var(--bar); color: var(--text-2); overflow-wrap: anywhere; }
+span.ixWhy { display: inline-block; padding: 4px 8px; margin-top: 4px; }
+.ixCardNote { margin: 0; color: var(--text-2); overflow-wrap: anywhere; }
+.ixMeaning { margin: 0; color: var(--text-2); max-width: 86ch; }
+
+/* cards */
+.ixGrid { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+.ixCardLi { display: flex; min-width: 0; }
+.ixCard { flex: 1; min-width: 0; gap: 8px; color: var(--text); text-decoration: none; transition: border-color .15s, background .15s; }
+.ixCard:hover { border-color: var(--line-3); background: var(--panel-on); }
+.ixCardTop { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 6px 10px; }
+.ixName { margin: 0; font-family: var(--serif); font-weight: 400; font-size: 23px; line-height: 1.15; }
+.ixVal { margin: 2px 0 0; font-size: 30px; font-weight: 500; line-height: 1.1; }
+.ixCard-off .ixVal, .ixCard-pending .ixVal, .ixCard-error .ixVal { color: var(--text-3); }
+.ixChgs { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 0; font-size: 13px; min-height: 20px; }
+.ixChg { white-space: nowrap; }
+.ixChg b { font-weight: 500; }
+.ixSpark { display: block; width: 100%; height: 40px; margin: 2px 0; }
+.ixSpark polyline { stroke: var(--text-3); stroke-width: 1.6; stroke-linejoin: round; }
+.ixSpark.up polyline { stroke: var(--ix-up); } .ixSpark.down polyline { stroke: var(--ix-down); }
+.ixMore { margin-top: auto; padding-top: 6px; font-size: 13px; font-weight: 600; color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+
+/* one index */
+.ixTiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); gap: 10px; }
+.ixTile { min-width: 0; gap: 3px; }
+.ixTileVal { font-size: 20px; font-weight: 500; line-height: 1.25; overflow-wrap: anywhere; }
+.ixSegs { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+.ixSegs .seg button { min-height: 40px; min-width: 48px; }
+.ixChart { height: clamp(260px, 42vh, 440px); min-width: 0; }
+.ixChart[hidden] { display: none; }
+.ixChartSum { margin: 0; color: var(--text-2); max-width: 110ch; }
+.ixDetails summary { display: inline-flex; align-items: center; min-height: 40px; cursor: pointer; color: var(--accent); font-size: 13px; font-weight: 600; }
+.ixSeriesWrap { max-height: 340px; overflow-y: auto; }
+.ixSeries th[scope=row] { text-align: left; font-weight: 400; color: var(--text); border-top: 1px solid var(--line); padding: 7px 8px 7px 0; }
+.ixBlock .screener th[scope=row] { text-align: left; font-weight: 400; color: var(--text); font-size: 13px; padding: 9px 8px 9px 0; border-top: 1px solid var(--line); white-space: normal; vertical-align: top; }
+.ixBlock .screener tfoot th, .ixBlock .screener tfoot td { border-top: 2px solid var(--line-2); font-weight: 600; color: var(--text); }
+.ixBlock .screener.stTable th.ixNum, .ixBlock .screener.stTable td.ixNum { text-align: right; white-space: nowrap; }
+.ixWrap { white-space: normal !important; min-width: 180px; max-width: 46ch; overflow-wrap: anywhere; }
+.ixSub { display: block; }
+.ixSym { display: flex; flex-direction: column; justify-content: center; min-height: 40px; min-width: 120px; color: var(--text); text-decoration: none; }
+.ixSym b { color: var(--accent); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.ixPartsTable th[scope=row] { min-width: 150px; }
+.ixMethod, .ixLimits, .ixSources { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 8px; max-width: 96ch; color: var(--text-2); font-size: 14px; line-height: 1.5; }
+.ixSources { list-style: none; padding-left: 0; gap: 4px; overflow-wrap: anywhere; }
+.ixHist { margin: 0; padding: 8px 12px; border-left: 3px solid var(--accent); background: var(--bar); border-radius: 0 10px 10px 0; color: var(--text); font-size: 14px; max-width: 96ch; }
+
+/* capital spending bars */
+.ixBarsHold { min-width: 0; overflow: hidden; }
+.ixBars svg { display: block; max-width: 100%; height: auto; }
+.ixGridLine { stroke: var(--line); stroke-width: 1; }
+.ixAxis { fill: var(--text-3); font: 11px var(--mono); }
+.ixAxis.up { fill: var(--ix-up); } .ixAxis.down { fill: var(--ix-down); }
+.ixBarTop { fill: var(--text); font: 600 11px var(--mono); }
+.ixSeg { stroke: none; }
+.ixS0 { fill: var(--ix-s0); background: var(--ix-s0); } .ixS1 { fill: var(--ix-s1); background: var(--ix-s1); } .ixS2 { fill: var(--ix-s2); background: var(--ix-s2); }
+.ixS3 { fill: var(--ix-s3); background: var(--ix-s3); } .ixS4 { fill: var(--ix-s4); background: var(--ix-s4); } .ixS5 { fill: var(--ix-s5); background: var(--ix-s5); }
+.ixSw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+.ixLegend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 18px; font-size: 13px; }
+.ixLegend li { min-width: 0; }
+.ixCapexTable th[scope=row] { white-space: nowrap !important; min-width: 120px; }
+.ixCoName { display: none; }
+@media (min-width: 1100px) { .ixCoName { display: inline; } }
+
+@media (max-width: 720px) {
+  .ixPad { padding: 14px 14px 32px; }
+  .ixHeadNote { text-align: left; }
+  .ixName { font-size: 21px; }
+  .ixVal { font-size: 26px; }
+  .ixNote { text-align: left; }
+}

@@ -1,0 +1,263 @@
+{
+  "version": "2026-11-19",
+  "label": "Halftone index, not an official benchmark",
+  "about": "The published method and inputs of every Halftone index. The page shows this text under 'How this is calculated'; docs/INDEX-METHODS.md explains the choices. Change a basket here and the index changes with it: nothing about a constituent lives in code.",
+  "indexes": [
+    {
+      "id": "inference",
+      "kind": "table",
+      "name": "Inference price index",
+      "meaning": "The published list price of running large AI models, per million tokens.",
+      "summary": "Equal-weighted average change in the list price of a fixed set of named models, from a dated table of the providers' own published prices.",
+      "unit": "USD per 1M tokens",
+      "blend": { "input": 3, "output": 1 },
+      "minConstituents": 3,
+      "method": [
+        "Each model's price is one blended figure: three parts its input-token price and one part its output-token price, in US dollars per million tokens (so $2 in and $10 out is $4.00).",
+        "The table below is a dated copy of the list prices each provider publishes on its own pricing page, with a link per row. It is entered by hand: no provider offers these prices as an official machine-readable feed.",
+        "The index is 100 on the date of the first table. Each later table moves it by the plain average of the percentage changes in the blended price of every model that appears in both that table and the one before it.",
+        "A model that is new in a table joins from the next table on; a model that is withdrawn stops counting. The index therefore measures the price of the same named models over time, not the price of 'the best model'."
+      ],
+      "limits": [
+        "List prices only: no volume discounts, batch or cached-token prices, or private contracts.",
+        "It says nothing about quality. A cheaper, better model replacing an older one is a larger fall in the real cost of inference than this index shows.",
+        "The 3:1 blend of input to output tokens is a judgement; real workloads differ.",
+        "It moves only when someone enters a new dated table. Between tables it is flat by construction, and the date of the latest table is always shown."
+      ],
+      "snapshots": [
+        {
+          "asOf": "2026-11-19",
+          "note": "Read on each provider's own pricing page on 2026-11-19. Standard pay-as-you-go text prices, short-context tier where a provider has tiers.",
+          "rows": [
+            { "provider": "OpenAI", "model": "gpt-6.2-astra", "input": 8, "output": 40, "url": "https://developers.openai.com/api/docs/pricing" },
+            { "provider": "OpenAI", "model": "gpt-6.2-sol", "input": 2, "output": 10, "url": "https://developers.openai.com/api/docs/pricing" },
+            { "provider": "OpenAI", "model": "gpt-6-luna", "input": 0.1, "output": 0.5, "url": "https://developers.openai.com/api/docs/pricing" },
+            { "provider": "Anthropic", "model": "Claude Fable 5.2", "input": 8, "output": 40, "url": "https://platform.claude.com/docs/en/about-claude/pricing" },
+            { "provider": "Anthropic", "model": "Claude Sonnet 5.5", "input": 2, "output": 10, "url": "https://platform.claude.com/docs/en/about-claude/pricing" },
+            { "provider": "Anthropic", "model": "Claude Haiku 5.5 (prompts up to 100,000 tokens)", "input": 0.1, "output": 0.5, "url": "https://platform.claude.com/docs/en/about-claude/pricing" },
+            { "provider": "Google", "model": "gemini-3.1-pro-preview (prompts up to 200,000 tokens)", "input": 2, "output": 12, "url": "https://ai.google.dev/gemini-api/docs/pricing" },
+            { "provider": "Google", "model": "gemini-3.5-flash", "input": 1.5, "output": 9, "url": "https://ai.google.dev/gemini-api/docs/pricing" },
+            { "provider": "Google", "model": "gemini-3.1-flash-lite", "input": 0.25, "output": 1.5, "url": "https://ai.google.dev/gemini-api/docs/pricing" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "gpu-demand",
+      "kind": "demand",
+      "name": "GPU demand index",
+      "meaning": "How fast money is flowing to the makers of AI chips, and out of their largest buyers.",
+      "summary": "Half the trailing-four-quarter revenue of four AI chip and memory makers, half the trailing-four-quarter capital spending of five large buyers, each from SEC filings and rebased to 100.",
+      "weights": { "suppliers": 0.5, "buyers": 0.5 },
+      "buyersFrom": "capex",
+      "suppliers": [
+        { "symbol": "NVDA", "name": "NVIDIA", "reason": "The largest maker of AI accelerators." },
+        { "symbol": "AMD", "name": "Advanced Micro Devices", "reason": "The second supplier of data-center GPUs." },
+        { "symbol": "AVGO", "name": "Broadcom", "reason": "Custom AI accelerators and data-center networking chips." },
+        { "symbol": "MU", "name": "Micron Technology", "reason": "High-bandwidth memory, sold alongside every accelerator." }
+      ],
+      "method": [
+        "Supply side: the total revenue of the chip makers listed, added up for each quarter and the three before it (trailing four quarters).",
+        "Demand side: the capital expenditure of the buyers in the AI capital spending tracker, added up the same way.",
+        "Each side is divided by its own value in the first quarter both exist, and the index is 100 times the average of the two (half each).",
+        "Company quarters are placed in the calendar quarter that holds the middle of the period. A quarter counts only when every listed company has reported it."
+      ],
+      "limits": [
+        "Total company revenue, not data-center revenue: the SEC's company-facts data carries only figures for the whole company, so the split by segment that the companies publish is not available from it. Broadcom, AMD and Micron sell a great deal that has nothing to do with AI.",
+        "It is not a measure of GPU prices or of how hard GPUs are to rent. No public source of rental prices with terms that allow display was found.",
+        "TSMC, which makes most of these chips, files under international rules and has no figures in the SEC data used here.",
+        "Quarterly, and late: a quarter appears only after the last company has filed, weeks after it ends. The SEC statements used here reach back eight quarters, so the trailing-four-quarter index has five points."
+      ]
+    },
+    {
+      "id": "energy",
+      "kind": "energy",
+      "name": "Energy cost index",
+      "meaning": "What a large US power user pays for electricity, and what the gas that sets much of that price costs.",
+      "summary": "Half the US average industrial retail electricity price, half the Henry Hub natural gas spot price (monthly average), each against its own level in the base month. From the US Energy Information Administration.",
+      "baseMonth": "2023-01",
+      "years": 5,
+      "weights": { "electricity": 0.5, "gas": 0.5 },
+      "eia": {
+        "electricity": { "route": "electricity/retail-sales", "data": "price", "facets": { "sectorid": "IND", "stateid": "US" }, "name": "US average retail price of electricity, industrial sector", "unit": "cents per kWh", "url": "https://www.eia.gov/electricity/data/browser/" },
+        "gas": { "route": "natural-gas/pri/fut", "data": "value", "facets": { "series": "RNGWHHD" }, "name": "Henry Hub natural gas spot price", "unit": "USD per million Btu", "url": "https://www.eia.gov/dnav/ng/hist/rngwhhdD.htm" }
+      },
+      "fred": {
+        "electricity": { "series": "WPU0543", "name": "Producer price index: industrial electric power (Bureau of Labor Statistics)", "unit": "index", "url": "https://fred.stlouisfed.org/series/WPU0543" },
+        "gas": { "series": "MHHNGSP", "name": "Henry Hub natural gas spot price, monthly (EIA)", "unit": "USD per million Btu", "url": "https://fred.stlouisfed.org/series/MHHNGSP" }
+      },
+      "method": [
+        "Two monthly inputs: the average price US industrial customers paid for electricity, and the average of the month's daily Henry Hub natural gas spot prices.",
+        "Each is divided by its own value in the base month. The index is 100 times the average of the two ratios (half each), so it reads 100 in the base month.",
+        "Only months for which both inputs have been published are shown. Electricity prices arrive about two months late, so the latest month is usually two or three behind the calendar.",
+        "With an EIA key the electricity input is a price in cents per kilowatt-hour. Without one, with a FRED key, it is the Bureau of Labor Statistics' producer price index for industrial electric power, which moves with the same prices but is itself an index; the page says which is in use."
+      ],
+      "limits": [
+        "Not wholesale power: the EIA's open-data service has no wholesale price series this index could use, and wholesale prices are regional. Retail industrial prices move more slowly than the wholesale market.",
+        "A national average. A data center in Virginia, Texas or Oregon pays a different price, often under a private contract.",
+        "Nothing about supply: grid capacity, connection queues and the generation mix are not in it.",
+        "The half-and-half weighting is a judgement."
+      ]
+    },
+    {
+      "id": "compute",
+      "kind": "prices",
+      "name": "Compute price index",
+      "meaning": "The list price of renting a fixed set of cloud machines, GPU and CPU, by the hour.",
+      "summary": "Equal-weighted average change in the hourly pay-as-you-go list price of seven named Azure virtual machines in one region, collected daily from Microsoft's public retail price list.",
+      "unit": "USD per hour",
+      "minConstituents": 3,
+      "source": {
+        "name": "Azure retail prices",
+        "api": "https://prices.azure.com/api/retail/prices",
+        "docs": "https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices",
+        "region": "eastus",
+        "everyHours": 6
+      },
+      "basket": [
+        { "id": "nc40ads-h100", "armSkuName": "Standard_NC40ads_H100_v5", "name": "NC40ads H100 v5 (1 NVIDIA H100, 40 vCPU)", "group": "GPU", "reason": "A single current-generation training and inference GPU." },
+        { "id": "nd96isr-h100", "armSkuName": "Standard_ND96isr_H100_v5", "name": "ND96isr H100 v5 (8 NVIDIA H100, 96 vCPU)", "group": "GPU", "reason": "The eight-GPU node large training jobs are built from." },
+        { "id": "nc24ads-a100", "armSkuName": "Standard_NC24ads_A100_v4", "name": "NC24ads A100 v4 (1 NVIDIA A100, 24 vCPU)", "group": "GPU", "reason": "The previous generation, still widely rented." },
+        { "id": "nc4as-t4", "armSkuName": "Standard_NC4as_T4_v3", "name": "NC4as T4 v3 (1 NVIDIA T4, 4 vCPU)", "group": "GPU", "reason": "A small, cheap inference GPU." },
+        { "id": "d8s-v5", "armSkuName": "Standard_D8s_v5", "name": "D8s v5 (8 vCPU Intel, 32 GB)", "group": "CPU", "reason": "A general-purpose Intel machine." },
+        { "id": "d8as-v5", "armSkuName": "Standard_D8as_v5", "name": "D8as v5 (8 vCPU AMD, 32 GB)", "group": "CPU", "reason": "A general-purpose AMD machine." },
+        { "id": "d8ps-v5", "armSkuName": "Standard_D8ps_v5", "name": "D8ps v5 (8 vCPU Arm, 32 GB)", "group": "CPU", "reason": "A general-purpose Arm machine." }
+      ],
+      "method": [
+        "Every few hours this server asks Microsoft's public retail price list for the pay-as-you-go hourly price, in US dollars, of each machine in the basket, running Linux, in the East US region. Spot, low-priority, reserved and Windows prices are left out.",
+        "A machine's price is used only when the answer leaves exactly one price for it. If none or several match, that machine is shown as not found and is not guessed.",
+        "One price per machine per day is kept. The index is 100 on the first day at least three machines have a price, and each later day moves it by the plain average of the machines' percentage price changes since their previous price.",
+        "History starts on the day this server first collected prices. Nothing earlier is filled in."
+      ],
+      "limits": [
+        "One cloud and one region. AWS's public price file for its virtual machines is far too large to read on every collection, and Google's needs a key; neither is collected.",
+        "List prices change rarely, in steps. Long flat stretches are the data, not a fault.",
+        "List prices are not what large customers pay, and say nothing about whether a machine can actually be had. GPU scarcity shows up in availability long before it shows up in a list price.",
+        "The history is kept in this server's memory. Unless an operator plugs in a permanent store, it starts again when the server restarts."
+      ]
+    },
+    {
+      "id": "data-center",
+      "kind": "basket",
+      "name": "Data center index",
+      "meaning": "The share prices of companies that own, power, cool and connect data centers.",
+      "summary": "Equal-weighted basket of eleven listed data-center operators and suppliers, from daily closing prices, rebalanced daily and rebased to 100.",
+      "baseDate": "2025-01-02",
+      "minConstituents": 4,
+      "constituents": [
+        { "symbol": "EQIX", "name": "Equinix", "reason": "The largest operator of shared data centers." },
+        { "symbol": "DLR", "name": "Digital Realty", "reason": "A data-center landlord to the large cloud companies." },
+        { "symbol": "IRM", "name": "Iron Mountain", "reason": "A fast-growing data-center developer beside its storage business." },
+        { "symbol": "VRT", "name": "Vertiv", "reason": "Power and cooling equipment for data halls." },
+        { "symbol": "ETN", "name": "Eaton", "reason": "Electrical distribution gear for data centers." },
+        { "symbol": "GEV", "name": "GE Vernova", "reason": "Gas turbines and grid equipment ordered for new sites. Listed in April 2024." },
+        { "symbol": "ANET", "name": "Arista Networks", "reason": "Network switches inside AI clusters." },
+        { "symbol": "CEG", "name": "Constellation Energy", "reason": "Nuclear power sold under contract to data-center owners." },
+        { "symbol": "VST", "name": "Vistra", "reason": "Power generation in the markets where data centers cluster." },
+        { "symbol": "DELL", "name": "Dell Technologies", "reason": "AI servers." },
+        { "symbol": "CRWV", "name": "CoreWeave", "reason": "A cloud built only for AI. Listed in March 2025, so it joins the basket late." }
+      ],
+      "method": [
+        "Each day, every company in the basket that has a closing price that day and an earlier one counts once. The index moves by the plain average of their percentage price changes since each one's previous close.",
+        "Equal weight, rebalanced every day: a small company moves the index as much as a large one.",
+        "A company with no price on a day is left out of that day's average; when its price returns, its whole move since its last close arrives that day. A company that listed after the start joins from its second day of trading.",
+        "The index is set to 100 on the base date, or on the first day the price history reaches if that is later. 'Contribution' is how many points of the index's move over the chosen period came from each company; the contributions add up to the move."
+      ],
+      "limits": [
+        "Price only: dividends are not added back, so it understates what a holder of the property companies earned.",
+        "Daily rebalancing has no trading costs here; a real fund doing the same would lag it.",
+        "A judgement about who belongs. Several members earn most of their money elsewhere (Eaton, Dell, Iron Mountain, the power companies).",
+        "It needs a connected source of exchange closing prices. Perpetual-contract prices are not exchange closes and are not used."
+      ]
+    },
+    {
+      "id": "capex",
+      "kind": "capex",
+      "name": "AI capital spending",
+      "meaning": "What the largest buyers of data centers and AI chips spend on property and equipment each quarter.",
+      "summary": "Capital expenditure of five large cloud and AI buyers from their SEC filings, by calendar quarter; the index is the trailing-four-quarter total, rebased to 100.",
+      "companies": [
+        { "symbol": "MSFT", "name": "Microsoft", "reason": "Azure, and the largest backer of OpenAI's compute." },
+        { "symbol": "GOOGL", "name": "Alphabet", "reason": "Google Cloud and its own AI models and chips." },
+        { "symbol": "AMZN", "name": "Amazon", "reason": "AWS, the largest cloud. Its figure also includes warehouses and transport." },
+        { "symbol": "META", "name": "Meta Platforms", "reason": "The largest buyer with no cloud to sell: all of it is for its own use." },
+        { "symbol": "ORCL", "name": "Oracle", "reason": "Building capacity under very large AI contracts." }
+      ],
+      "method": [
+        "For each company, the cash paid for property and equipment in each quarter, as reported in the cash-flow statement of its SEC filings.",
+        "Companies end their quarters on different dates. Each quarter is placed in the calendar quarter that holds the middle of the period (Oracle's June-to-August quarter counts as the third calendar quarter).",
+        "The total for a quarter is shown only when every listed company has a figure for it. Growth is the change from the same quarter a year earlier.",
+        "The index is the total for a quarter and the three before it, with the first such total set to 100."
+      ],
+      "limits": [
+        "All capital spending, not only AI: Amazon's includes logistics, and every company's includes offices and ordinary equipment.",
+        "Cash paid for purchases only. Equipment taken on under finance leases, which some of these companies use heavily for data centers, is not in this line.",
+        "Some quarterly figures are worked out as the difference between two year-to-date figures, because cash-flow statements are cumulative; those are marked.",
+        "Quarterly and late. The SEC statements used here reach back eight quarters."
+      ]
+    },
+    {
+      "id": "semis",
+      "kind": "basket",
+      "name": "AI hardware basket",
+      "meaning": "The share prices of the companies that design and make AI chips, and the machines that make the chips.",
+      "summary": "Equal-weighted basket of ten listed chip designers, makers and equipment suppliers, from daily closing prices, rebalanced daily and rebased to 100.",
+      "baseDate": "2025-01-02",
+      "minConstituents": 4,
+      "constituents": [
+        { "symbol": "NVDA", "name": "NVIDIA", "reason": "AI accelerators." },
+        { "symbol": "AMD", "name": "Advanced Micro Devices", "reason": "Data-center GPUs and processors." },
+        { "symbol": "AVGO", "name": "Broadcom", "reason": "Custom accelerators and networking chips." },
+        { "symbol": "TSM", "name": "Taiwan Semiconductor (US-listed shares)", "reason": "Manufactures nearly all leading-edge AI chips." },
+        { "symbol": "MU", "name": "Micron Technology", "reason": "High-bandwidth memory." },
+        { "symbol": "MRVL", "name": "Marvell Technology", "reason": "Custom chips and optical links for data centers." },
+        { "symbol": "ASML", "name": "ASML (US-listed shares)", "reason": "The only maker of the lithography machines leading-edge chips need." },
+        { "symbol": "AMAT", "name": "Applied Materials", "reason": "Chip-making equipment." },
+        { "symbol": "LRCX", "name": "Lam Research", "reason": "Chip-making equipment, strong in memory." },
+        { "symbol": "KLAC", "name": "KLA", "reason": "Inspection equipment for chip factories." }
+      ],
+      "method": [
+        "Each day, every company in the basket that has a closing price that day and an earlier one counts once. The index moves by the plain average of their percentage price changes since each one's previous close.",
+        "Equal weight, rebalanced every day: NVIDIA counts for a tenth, not for most of the basket as it would by market value.",
+        "A company with no price on a day is left out of that day's average; when its price returns, its whole move since its last close arrives that day.",
+        "The index is set to 100 on the base date, or on the first day the price history reaches if that is later. 'Contribution' is how many points of the index's move over the chosen period came from each company; the contributions add up to the move."
+      ],
+      "limits": [
+        "Price only, no dividends, no trading costs.",
+        "Equal weighting is a choice: it says how the typical member did, not how the sector's total value moved.",
+        "It needs a connected source of exchange closing prices. Perpetual-contract prices are not exchange closes and are not used."
+      ]
+    },
+    {
+      "id": "ai-crypto",
+      "kind": "crypto",
+      "name": "AI-linked crypto basket",
+      "meaning": "The prices of crypto tokens tied to AI and decentralized compute networks.",
+      "summary": "Equal-weighted basket of named AI and compute tokens that have a perpetual contract on Hyperliquid, from that contract's daily closes, rebalanced daily and rebased to 100.",
+      "days": 400,
+      "minConstituents": 3,
+      "candidates": [
+        { "coin": "TAO", "name": "Bittensor", "reason": "A network that pays for machine-learning work." },
+        { "coin": "RENDER", "name": "Render", "reason": "A marketplace for GPU rendering and compute." },
+        { "coin": "FET", "name": "Artificial Superintelligence Alliance", "reason": "AI agents and compute, merged from three projects." },
+        { "coin": "IO", "name": "io.net", "reason": "A marketplace for rented GPUs." },
+        { "coin": "GRASS", "name": "Grass", "reason": "Sells web data for AI training." },
+        { "coin": "VIRTUAL", "name": "Virtuals Protocol", "reason": "A launchpad for AI agents." },
+        { "coin": "AIXBT", "name": "aixbt", "reason": "An AI agent's own token." },
+        { "coin": "NEAR", "name": "NEAR Protocol", "reason": "A general blockchain that markets itself as AI infrastructure." }
+      ],
+      "method": [
+        "The list of tokens is fixed here, but a token is used only if Hyperliquid lists a contract with exactly that name when the index is built. Any that are not listed are dropped and named on the page.",
+        "Prices are the daily closes (midnight UTC) of each token's perpetual contract on Hyperliquid. The day still trading is left out.",
+        "Each day the index moves by the plain average of the tokens' percentage changes since their previous close. Equal weight, rebalanced daily. A token whose contract began later joins from its second day.",
+        "The index is 100 on the first day at least three of the tokens have a price in the window read (about 400 days)."
+      ],
+      "limits": [
+        "Perpetual-contract prices, not spot prices; the two stay close but are not the same.",
+        "Only tokens with a contract on one venue. Large AI tokens without one are missing.",
+        "What counts as an 'AI token' is a judgement, and most of these tokens have little to do with real AI workloads.",
+        "A basket this small and this volatile is moved a long way by one member."
+      ]
+    }
+  ]
+}
