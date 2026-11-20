@@ -13,6 +13,7 @@ import { createTreasury } from './treasury.js';
 import { createFred, FRED_NOTICE, RELEASES } from './fred.js';
 import { createHyperliquidPerps, createFinnhub, createTwelveData } from './prices.js';
 import { fomcEvents, fomcCoversUntil, FOMC_NOTE } from './calendar.js';
+import { createFunds, createInsiders } from './funds.js';
 
 const MIN = 60000;
 const clean = (v) => (typeof v === 'string' ? v.trim() : '');
@@ -57,6 +58,8 @@ export function createLiveBackend({ env = {}, fetchImpl = fetch, now = Date.now,
   });
 
   const edgar = createEdgar({ source: sec, now, formDDetails: tuning.formDDetails ?? 25, formDWaitMs: tuning.formDWaitMs ?? 1500 });
+  const funds = createFunds({ source: sec, edgar, now, log, tuning });
+  const insiders = createInsiders({ source: sec, edgar, now, tuning });
   const treasury = createTreasury({ source: treasurySource, now });
   const fred = createFred({ source: fredSource, key: fredKey, now });
   const hl = createHyperliquidPerps({ source: hlSource, env, now });
@@ -295,12 +298,19 @@ export function createLiveBackend({ env = {}, fetchImpl = fetch, now = Date.now,
       // An answer that is still filling in is not kept: the next request gets what has arrived since.
     }, { keep: (v) => !v.detailsPending }),
 
+    // ----- Funds: 13F holdings, insider transactions, stakes above 5% (see funds.js) -----
+    async funds() { const led = ledger(now); return { ...(await funds.funds(led)), sources: led.list() }; },
+    async fund(id) { const led = ledger(now); return { ...(await funds.fund(id, led)), sources: led.list() }; },
+    holders: (symbol) => once('holders:' + symbol, 30000, async () => { const led = ledger(now); return { ...(await funds.holders(symbol, led)), sources: led.list() }; }, { keep: (v) => !v.pending }),
+    async insiders(symbol) { const led = ledger(now); return { ...(await insiders.insiders(symbol, led)), sources: led.list() }; },
+    insidersLatest: () => once('insiders:latest', 60000, async () => { const led = ledger(now); return { ...(await insiders.latest(led)), sources: led.list() }; }, { keep: (v) => !v.detailsPending }),
+
     health() {
       const fed = now() > Date.parse(fomcCoversUntil() + 'T00:00:00Z')
         ? { name: 'Federal Reserve calendar', state: 'error', note: 'The meeting schedule held in the code has run out and needs updating from the Fed’s page.', lastOk: null, lastError: 'Schedule out of date' }
         : { name: 'Federal Reserve calendar', state: 'ok', note: FOMC_NOTE, lastOk: null, lastError: null };
       return { sources: [sec, treasurySource, hlSource, finnhubSource, twelveSource, fredSource].map((s) => s.health()).concat(fed) };
     },
-    stop() { memo.clear(); }
+    stop() { memo.clear(); funds.stop(); }
   };
 }

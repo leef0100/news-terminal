@@ -1,0 +1,68 @@
+/* Funds, and the ownership block on a company page. Colour comes only from the theme's
+   variables. Direction is always said in words or by an arrow; colour only repeats it. */
+#view-funds { --tf-up: var(--up, #1E8E4E); --tf-down: var(--down, #C8452C); }
+#view-funds :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#view-funds .up, .fnBlock .up, #tfOwn .up { color: var(--tf-up, var(--accent)); }
+#view-funds .down, .fnBlock .down, #tfOwn .down { color: var(--tf-down, var(--down)); }
+.fnStack { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.fnStack[hidden], .fnBack[hidden] { display: none; }
+.fnBack { display: inline-flex; align-items: center; min-height: 44px; text-decoration: none; }
+
+/* the caveats */
+.fnCaveat { border-left: 4px solid var(--warn); }
+.fnCaveat h2 { margin: 0; }
+.fnCaveat .tfLede { margin: 0; }
+.fnCaveats { list-style: none; margin: 4px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 12px 28px; }
+.fnCaveats li { font-size: 14px; line-height: 1.5; color: var(--text-2); max-width: 70ch; }
+.fnCaveats b { color: var(--text); font-weight: 600; }
+
+/* tables */
+.fnBlock .screener th, .fnBlock .screener td, #tfOwn .screener th, #tfOwn .screener td { text-align: left; }
+.fnBlock .screener th.fnNum, .fnBlock .screener td.mono, #tfOwn .screener th.fnNum, #tfOwn .screener td.mono { text-align: right; }
+.fnBlock .screener th.fnNum .thBtn { margin-left: auto; }
+.fnBlock .screener td, .fnBlock .screener th, #tfOwn .screener td { vertical-align: middle; }
+.fnIssuer { min-width: 190px; max-width: 340px; white-space: normal !important; }
+.fnIssuer .tfSym { min-height: 40px; }
+.fnMgrLink b { font-size: 14px; }
+.fnName { display: block; overflow-wrap: anywhere; white-space: normal; }
+a .fnName { max-width: 30ch; }
+.fnClass, .fnSub { display: block; white-space: normal; font-family: var(--sans); }
+.fnBar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; }
+.fnBar .seg button { padding: 0 14px; font-family: var(--sans); font-size: 13px; }
+.fnWhat { display: block; font-weight: 500; }
+.fnChange { white-space: nowrap; font-size: 12.5px; }
+.fnShare { min-width: 150px; }
+.fnPct { display: inline-block; min-width: 58px; }
+.fnBarTrack { display: inline-block; vertical-align: middle; width: 84px; height: 8px; margin-left: 8px; border-radius: 4px; background: var(--bar); border: 1px solid var(--line); overflow: hidden; }
+.fnBarFill { display: block; height: 100%; background: var(--accent); }
+.fnNone { margin: 4px 0; font-size: 13px; }
+
+/* one manager */
+.fnSum { gap: 14px; }
+.fnAsOf { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 16px; margin: 0; }
+.fnAsOfMain { font-family: var(--serif); font-size: clamp(24px, 3.2vw, 34px); line-height: 1.15; }
+.fnAsOfSub { font-size: 16px; color: var(--text-2); }
+.fnOld { margin: 0; font-size: 14px; color: var(--warn); }
+.fnMm { margin: 0; }
+.fnLinks { margin: 0; }
+.fnLinks .link { display: inline-block; padding: 10px 0; }
+.fnNotes { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--text-2); max-width: 110ch; }
+.fnChgGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 22px 28px; }
+.fnChgBox { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.fnChgBox h3, .fnCoPart h3 { margin: 0; font-size: 15px; }
+.fnChgBox p { margin: 0; }
+.fnChgTable .fnIssuer { min-width: 150px; }
+
+/* the block on a company page */
+.fnCoPart { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding-top: 14px; border-top: 1px solid var(--line); }
+.fnCoPart:first-child { padding-top: 0; border-top: 0; }
+.fnCoPart p { margin: 0; }
+.fnCoPart .link { display: inline-block; padding: 10px 0; }
+#tfOwn .tfBody { display: flex; flex-direction: column; gap: 16px; }
+
+@media (max-width: 620px) {
+  .fnBarTrack { width: 48px; }
+  .fnShare { min-width: 118px; }
+  .fnIssuer { min-width: 150px; }
+  .fnAsOfSub { font-size: 14px; }
+}

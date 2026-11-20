@@ -11,7 +11,7 @@
     "start": "node src/server.js",
     "demo": "node src/server.js --demo",
     "test": "node --test test/*.test.js",
-    "test:e2e": "node test/e2e/run.mjs && node test/e2e/tradfi.mjs"
+    "test:e2e": "node test/e2e/run.mjs && node test/e2e/tradfi.mjs && node test/e2e/funds.mjs && node test/e2e/indexes.mjs && node test/e2e/voices.mjs"
   },
   "dependencies": {
     "compression": "^1.8.2",

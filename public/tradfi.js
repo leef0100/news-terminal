@@ -486,7 +486,9 @@
     ui.facts = card('Key facts', 'tfFacts');
     ui.stmt = card('Financial statements', 'tfStmt');
     ui.fil = card('Recent filings', 'tfFil');
-    add(ui.coMain, ui.quote.sec, ui.chartCard.sec, ui.facts.sec, ui.stmt.sec, ui.fil.sec);
+    // Large managers holding the share, insider transactions and stakes above 5%: drawn by funds.js.
+    ui.own = card('Who holds it and who is trading it', 'tfOwn');
+    add(ui.coMain, ui.quote.sec, ui.chartCard.sec, ui.facts.sec, ui.stmt.sec, ui.own.sec, ui.fil.sec);
     add(ui.co, ui.coState, ui.coMain);
     view.appendChild(ui.co);
     drawRanges();
@@ -1406,6 +1408,7 @@
   }
   function loadCompany() {
     var s = st.sym, seq = st.co.seq;
+    if (window.HalftoneFunds && !/^HL:/.test(s)) window.HalftoneFunds.company(ui.own, s);
     api('/company?symbol=' + encodeURIComponent(s)).then(function (d) {
       if (seq !== st.co.seq || s !== st.sym) return;
       st.co.data = d; st.co.unknown = false;
@@ -1449,7 +1452,8 @@
     ui.coMain.hidden = true;
     ui.coState.hidden = false;
     ui.coState.textContent = 'Loading ' + s + '…';
-    [ui.quote, ui.facts, ui.stmt, ui.fil].forEach(function (c) { c.body.replaceChildren(); c.note.replaceChildren(); });
+    [ui.quote, ui.facts, ui.stmt, ui.own, ui.fil].forEach(function (c) { c.body.replaceChildren(); c.note.replaceChildren(); });
+    if (window.HalftoneFunds) window.HalftoneFunds.reset();
     if (!s) coProblem('unknown');
   }
 

@@ -135,9 +135,22 @@ export function createEdgar({ source, now = Date.now, formDDetails = 25, formDWa
       transform: (s) => {
         const r = s?.filings?.recent || {};
         const filings = [];
-        for (let i = 0; i < (r.accessionNumber || []).length && filings.length < 40; i++) {
+        // Insider forms (3, 4, 5) and stake schedules (13D, 13G) are picked out of the whole
+        // recent list for the Funds blocks; the general list stops at the newest 40 filings.
+        const insiderFilings = [], stakeFilings = [];
+        for (let i = 0; i < (r.accessionNumber || []).length; i++) {
           const acc = String(r.accessionNumber[i]);
           if (!/^\d{10}-\d{2}-\d{6}$/.test(acc)) continue;
+          const kind = String(r.form?.[i] || ''), filed = String(r.filingDate?.[i] || '').slice(0, 10);
+          if (/^[345](\/A)?$/.test(kind) && insiderFilings.length < 40) insiderFilings.push({ form: kind, filedAt: filed, accession: acc });
+          else if (/^(SC|SCHEDULE) 13[DG](\/A)?$/.test(kind) && stakeFilings.length < 25) {
+            stakeFilings.push({
+              form: kind, kind: /13D/.test(kind) ? '13D' : '13G', amendment: /\/A$/.test(kind), filedAt: filed,
+              title: (/13D/.test(kind) ? 'Schedule 13D: a stake above 5% (the long form, for holders who may seek influence)' : 'Schedule 13G: a stake above 5% (the short form, for passive holders)') + (/\/A$/.test(kind) ? ' (amendment)' : ''),
+              url: `${WWW}/Archives/edgar/data/${Number(cik)}/${acc.replace(/-/g, '')}/${acc}-index.htm`
+            });
+          }
+          if (filings.length >= 40) continue;
           // Only a plain file name is put into a link; anything else falls back to the filing's index page.
           const named = String(r.primaryDocument?.[i] || '');
           const doc = /^[\w.\-]+(\/[\w.\-]+)?$/.test(named) && !named.includes('..') ? named : '';
@@ -152,7 +165,7 @@ export function createEdgar({ source, now = Date.now, formDDetails = 25, formDWa
           name: String(s?.name || ''), industry: String(s?.sicDescription || '') || null, sic: String(s?.sic || '') || null,
           exchange: [].concat(s?.exchanges || []).filter(Boolean)[0] || null,
           fiscalYearEnd: /^\d{4}$/.test(fye) ? fye.slice(0, 2) + '-' + fye.slice(2) : null,
-          state: String(s?.stateOfIncorporation || '') || null, filings
+          state: String(s?.stateOfIncorporation || '') || null, filings, insiderFilings, stakeFilings
         };
       }
     });
@@ -172,7 +185,9 @@ export function createEdgar({ source, now = Date.now, formDDetails = 25, formDWa
   }
 
   // --- Newest filings of a form, across all companies ---------------------------------------
-  const feed = (type, led) => led.read(source, `${WWW}/cgi-bin/browse-edgar?action=getcurrent&type=${encodeURIComponent(type)}&company=&dateb=&owner=include&start=0&count=40&output=atom`, {
+  // `owner: 'only'` keeps the list to ownership forms (3, 4, 5), so asking for "4" is not
+  // answered with every 424B prospectus as well.
+  const feed = (type, led, { count = 40, owner = 'include' } = {}) => led.read(source, `${WWW}/cgi-bin/browse-edgar?action=getcurrent&type=${encodeURIComponent(type)}&company=&dateb=&owner=${owner}&start=0&count=${count}&output=atom`, {
     ttlMs: 600000, staleMs: 2 * HOUR, as: 'text', shared: true, transform: parseCurrentFeed
   });
 
@@ -250,5 +265,5 @@ export function createEdgar({ source, now = Date.now, formDDetails = 25, formDWa
     return { raises: out, detailsPending: pending };
   }
 
-  return { tickers, search, lookup, profile, financials, pipeline, raises };
+  return { tickers, search, lookup, profile, financials, pipeline, raises, feed };
 }

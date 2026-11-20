@@ -12,6 +12,7 @@
 import { DAY, bad, hash, noise, pick, round, pct, isoDay, isWeekday, weekday, RANGES } from './util.js';
 import { reach } from './prices.js';
 import { shapeStatement } from './layout.js';
+import { createDemoFunds } from './fundsDemo.js';
 
 const SECTORS = {
   Technology: { gm: 0.62, rd: 0.16, sga: 0.2, capex: 0.05, inv: 0.05, growth: 0.14 },
@@ -505,6 +506,9 @@ export function createDemoBackend({ now = Date.now } = {}) {
       });
       return { raises, sources: src(DEMO, NOTE) };
     },
+
+    // Funds, insiders and stakes: invented managers holding these same companies (fundsDemo.js).
+    ...createDemoFunds({ companies, priceAt, now, sources: () => src(DEMO, NOTE) }),
 
     health: () => ({ sources: [{ name: DEMO, state: 'ok', note: NOTE, lastOk: now(), lastError: null }] }),
     stop() {},

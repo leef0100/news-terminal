@@ -215,3 +215,129 @@ Still unverified until the first live run: every response shape marked from memo
 the SEC accepts the configured User-Agent; the real size of company-facts files against the
 64 MB cap; Finnhub's free-plan coverage of quotes and calendars; that Hyperliquid's weight for
 a 5,000-day candle request is what is budgeted (104).
+
+## Funds: Form 13F, Forms 3/4/5, Schedules 13D and 13G (added 2026-11-19)
+
+Code: `src/tradfi/funds.js` (readers, arithmetic, live service), `src/tradfi/fundsDemo.js`,
+two additions to `edgar.js` (`profile` also returns `insiderFilings` and `stakeFilings`; the
+filings feed takes `count` and `owner`). All calls go through the one SEC source: same
+User-Agent, cache, coalescing, 8 a second, and the per-address share of 60 a minute.
+
+**Calls made**
+
+| What | Address | Charged to |
+|---|---|---|
+| A manager's filing list | `data.sec.gov/submissions/CIK##########.json` (kept 30 minutes) | the visitor who opens a manager not yet read; nobody when the background fill reads it |
+| One 13F filing, whole | `www.sec.gov/Archives/edgar/data/<cik>/<accession, no dashes>/<accession>.txt` (kept 7 days; body cap 64 MB) | as above |
+| Fallback: the filing's index, then the table file it lists | `.../index.json`, then `.../<name>.xml` (and `primary_doc.xml` for an amendment) | as above |
+| A company's insider and stake filings | the company's submissions file, the same fetch the company page makes | the visitor |
+| One Form 4, whole | `.../<accession>.txt` (2 MB cap), newest 10 per company | the visitor, for `/insiders`; nobody for `/insiders/latest` |
+| Newest Form 4 filings, all companies | `cgi-bin/browse-edgar?action=getcurrent&type=4&owner=only&count=100&output=atom` | nobody (shared feed) |
+
+A 13F is read from the **complete submission text file**, not from a guessed file name: that
+file is named by the accession number alone and holds every document with its `<TYPE>`
+(`13F-HR`, `INFORMATION TABLE`), so the cover page and the table arrive in one request. If it
+is missing or holds no table, the filing's `index.json` is read and the table is the XML file
+that is not `primary_doc.xml` (a name containing "info", "table" or "13f" first, then the
+largest). This is a deviation from "find it in the index" only in order: the index is the
+fallback, because the text file costs one request where the index route costs two or three.
+
+**Rules applied**
+
+- **Value units.** `value` is multiplied by 1,000 for a filing made before 2023-01-03 and
+  taken as dollars from that date, by the filing date in the submissions file.
+- **Amendments.** For one quarter: the newest `13F-HR/A` whose cover says RESTATEMENT replaces
+  everything before it; later ones that say NEW HOLDINGS are added on; an amendment that says
+  neither, or cannot be read, is left out and a note says so. At most the three newest
+  amendments of a quarter are opened.
+- **Aggregation.** Rows are added by CUSIP + put/call + shares-or-principal. A CUSIP of 6 to 8
+  characters gets its leading zeros back (a spreadsheet artefact). A row without a readable
+  CUSIP, value or amount is skipped and counted.
+- **Cap.** At most 60,000 rows of a table are read (`tuning.fundRows`). A capped table says so,
+  its totals are understated, and no changes are computed from it.
+- **Changes** are by share count for plain share rows (not options, not principal amounts).
+  Increases and decreases are ranked by the change in shares times the latest filing's own
+  price (value / shares). A split, a merger or a new CUSIP appears as a change.
+- **Share of portfolio** is value over the table's total, options included.
+- **Tickers.** No CUSIP-to-ticker source is used. A ticker is attached only when the issuer
+  name, normalised (case, punctuation, Inc/Corp/Co/Ltd/Holdings spellings, a trailing state
+  such as DEL), equals the normalised name of exactly one company in the SEC ticker file, the
+  row is shares and not a note, preferred, warrant, unit or right, and either the company has
+  one ticker or it has exactly one ticker without a class suffix and the row is titled as the
+  ordinary share with no class. Otherwise the issuer name is shown unlinked. The 13F list
+  abbreviates many names, so a large part of real rows will be unlinked.
+- **`/holders`** reads only tables already in memory. It never starts a fetch of a filing.
+- **Background fill.** Starts on the first Funds request, two managers at a time, 1.5 seconds
+  apart, on nobody's account. A table is re-read after 6 hours; a failure is retried after 2
+  minutes; `/funds` reports `pending`.
+- **Name guard.** A manager is shown only if the name EDGAR returns for its number contains
+  the expected word (for example `BRIDGEWATER`); otherwise it is an error row.
+
+**The managers, and how each number was checked (2026-11-19)**
+
+"Title" means a sec.gov search result whose title reads "<filer name> - Form 13F-HR" at an
+address under that CIK. "Index" means a sec.gov filing index page for that CIK was opened and
+names the filer. Nothing was read from `data.sec.gov` (the fetch tool refuses it).
+
+| Manager | CIK | Checked by |
+|---|---|---|
+| Berkshire Hathaway | 1067983 | Title |
+| Citadel Advisors | 1423053 | Index (0000950123-22-006403: table `13310.xml`, 8.5 MB) |
+| Jane Street Group | 1595888 | Index (0001595888-15-000011) |
+| Susquehanna International Group | 1446194 | Title |
+| Bridgewater Associates | 1350694 | Title |
+| Renaissance Technologies | 1037389 | Title |
+| Two Sigma Investments | 1179392 | Title |
+| Millennium Management | 1273087 | Title |
+| Point72 Asset Management | 1603466 | Index (0000902664-25-002399) |
+| D. E. Shaw & Co. | 1009207 | Title |
+| AQR Capital Management | 1167557 | Title |
+| Tiger Global Management | 1167483 | Title |
+| Coatue Management | 1135730 | Title |
+| Viking Global Investors | 1103804 | Title |
+| Lone Pine Capital | 1061165 | Title |
+| Pershing Square Capital Management | 1336528 | Title |
+| Third Point | 1040273 | Title (under its earlier name, Third Point Management Co LLC) |
+| Elliott Investment Management | 1791786 | Index (0001013594-24-000968) |
+| Baupost Group | 1061768 | Title |
+| Appaloosa | 1656456 | Index (0001656456-18-000006) |
+| Duquesne Family Office | 1536411 | Index (0001536411-25-000011) |
+| Soros Fund Management | 1029160 | Title |
+| Greenlight Capital | 1079114 | Title |
+| Tudor Investment Corp | 923093 | Title ("Tudor Investment Corp et al") |
+| Scion Asset Management | 1649339 | Cover page of 0000905148-23-001400 opened |
+| Situational Awareness LP | 2045724 | Index (0002045724-25-000008) and its submission text file |
+
+None was dropped. Not checked: that each still files (Scion in particular may have stopped;
+a manager with no recent 13F-HR is shown as "No 13F holdings report"), and that the newest
+1,000 filings in a submissions file always reach back two quarters for the busiest filers
+(Citadel, Millennium and Susquehanna file hundreds of 13G forms each February).
+
+**What was verified, and how**
+
+| Item | Outcome |
+|---|---|
+| 13F information-table element names | **Seen in a real filing** (0002045724-25-000006 text file, tag outline read back by the fetch tool): `informationTable` > `infoTable` > `nameOfIssuer`, `titleOfClass`, `cusip`, `value`, `shrsOrPrnAmt` > `sshPrnamt`, `sshPrnamtType`; `putCall`; `investmentDiscretion`; `votingAuthority` > `Sole`, `Shared`, `None`; all with an `ns1:` prefix in that filing, namespace `http://www.sec.gov/edgar/document/thirteenf/informationtable`. Put/Call values "Put"/"Call" and type "SH" seen. `figi` and `otherManager` from the SEC's 13F data-set readme. The reader accepts any prefix or none. |
+| 13F cover (`primary_doc.xml`) | **Seen**: `edgarSubmission` > `headerData` > `submissionType`, `filerInfo` > `periodOfReport`; `formData` > `coverPage` > `reportCalendarOrQuarter`, `reportType`; `summaryPage` > `tableEntryTotal`, `tableValueTotal`. `isAmendment`, `amendmentNo`, `amendmentType` and the values RESTATEMENT / NEW HOLDINGS: **documentation only** (field names in the SEC readme, the two kinds in the SEC's 13F FAQ); the exact tag spelling and nesting are from memory, and that filing had none. Date format `MM-DD-YYYY` seen on a rendered cover. |
+| Value-units change | **Documentation**: the SEC's 13F FAQ gives the compliance date of the amended form as 3 January 2023 and the change from thousands to the nearest dollar; the SEC's 13F data-set readme says "Starting on January 3, 2023, market value is reported rounded to the nearest dollar". Also seen: a table filed in May 2022 headed "(x$1000)" and one filed in 2023 headed "(to the nearest dollar)". Whether every filer switched on the day: not checked; a filer that kept using thousands after the date would be shown 1,000 times too small. |
+| Complete submission text file | Address pattern confirmed on sec.gov "Accessing EDGAR Data"; header labels `CONFORMED SUBMISSION TYPE`, `FILED AS OF DATE`, `CONFORMED PERIOD OF REPORT` seen. The `<DOCUMENT>`/`<TYPE>`/`<TEXT>` wrapping is **from memory**. |
+| `index.json` in a filing directory | The page says index.json exists for directories; the `directory.item[].name/size` shape is **from memory**. Table file names vary as expected: `13310.xml`, `infotable.xml`, `informationtable.xml`, `Form13FInfoTable.xml`, `form13f_20250630.xml`, `SALP13FinfotableQ3.xml` (all seen on index pages). |
+| 13F rules | SEC FAQ: due within 45 days of quarter end; short positions are not reported; options are reported under the CUSIP and share count of the underlying, with PUT or CALL, and written options are not reported; a restatement resubmits the whole table, a new-holdings amendment lists only what is added. |
+| Form 4 XML element names | **Not seen** (no raw Form 4 could be opened). From memory: `ownershipDocument`, `documentType`, `periodOfReport`, `issuer/issuerCik|issuerName|issuerTradingSymbol`, `reportingOwner/reportingOwnerId/rptOwnerName`, `reportingOwnerRelationship/isDirector|isOfficer|isTenPercentOwner|isOther|officerTitle|otherText`, `nonDerivativeTable/nonDerivativeTransaction`, `derivativeTable/derivativeTransaction`, `securityTitle/value`, `transactionDate/value`, `transactionCoding/transactionCode`, `transactionAmounts/transactionShares|transactionPricePerShare|transactionAcquiredDisposedCode` (each with `value`), `postTransactionAmounts/sharesOwnedFollowingTransaction/value`, `ownershipNature/directOrIndirectOwnership/value`, `underlyingSecurity/underlyingSecurityTitle|underlyingSecurityShares`, `aff10b5One`. The SEC's insider-transactions data-set readme confirms the field set (names in upper case) and the tags `nonDerivativeTransaction` and `derivativeTransaction`. |
+| Transaction codes | **Documentation**: the SEC readme's code table (A, C, D, E, F, G, H, I, J, L, M, O, P, S, U, W, X, Z). The plain wording shown is ours. |
+| Form names for stakes | `SC 13D`, `SC 13G` and, for filings since the structured forms, `SCHEDULE 13D`, `SCHEDULE 13G`, each with `/A`: **from memory**. |
+| `getcurrent` with `owner=only` | **Not checked** (the feed could not be opened, as before). If `owner=only` is ignored the list would also hold 424B and 40-F forms; those are filtered out by form name, at the price of fewer Form 4 rows. |
+| That an insider's filing is reachable under the issuer's CIK directory | From memory. |
+
+**Demo.** Eight invented managers (ids `00098…`) hold the demo companies; CUSIPs start with
+`DEMO`. Their names were searched for on 2026-11-19 with no exact match; one first choice sat
+a letter from a real family office and was replaced. People are an initial and an invented
+surname. Tables go through the same `summarise` and `compare` as live filings.
+
+**Fields.** `/funds` rows: `state` is `ready`, `loading`, `none` (no 13F-HR on file),
+`error` or `off`. `/fund`: `filing.parts` lists the filings a quarter's table was built from
+with `role` (`original`, `restatement`, `new holdings`); `filing.stated` is the manager's own
+entry count and value total from the cover, for comparison; `changes` is null when there is
+nothing sound to compare with. `/holders`: `matched` is false when the company's name cannot
+be tied to 13F rows with certainty. Insider rows: `detail: false` means the filing was listed
+but not opened.

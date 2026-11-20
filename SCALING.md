@@ -176,4 +176,7 @@ These are single-machine numbers on weak hardware, useful for sizing, not proof 
 | `FINNHUB_KEY` | Stock quotes, earnings and IPO dates | off |
 | `TWELVEDATA_KEY` | Daily price history for any US share | off |
 | `FRED_KEY` | Macro figures and economic release dates | off |
+| `EIA_KEY` | Energy index inputs (US Energy Information Administration, free key) | off |
+| `INDEXES_CLOUD_PRICES=off` | Stops the daily cloud price collection behind the compute index | on |
+| `VOICES_CONTACT` | Contact added to the User-Agent when reading writers' feeds | none |
 | `HL_EQUITY_DEX` | Hyperliquid venue used for keyless stock and index prices; `off` disables | `xyz` |

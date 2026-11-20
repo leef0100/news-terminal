@@ -40,6 +40,10 @@ npm run test:e2e     # full browser test of every page (needs Chrome; set CHROME
 | **Stocks** | Indexes, sector moves, a market map, movers, the Treasury yield curve, macro figures and a watchlist. Every US-listed company has a page: price chart (daily, weekly, monthly, up to the full history held), key facts, income statement, balance sheet and cash flow as an expandable table (annual and quarterly, with year-over-year change), and recent filings linking to the SEC. |
 | **Calendar** | Earnings, IPOs, economic releases and central-bank meetings on one agenda, with filters. |
 | **Private** | Companies that have filed to go public, and private fundraising disclosed to the SEC on Form D: who raised, how much, which industry. Not valuations, and not a complete record of private deals. |
+| **Indexes** | Halftone's own AI infrastructure indexes, each with its method published: inference price, GPU demand, energy cost, compute price, data center, an AI capital spending tracker, an AI hardware basket and an AI-linked crypto basket. An index whose inputs are not connected says so. See docs/INDEX-METHODS.md. |
+| **Paper trade** | Go long or short on any index with pretend money kept in the browser. No funds, no orders. A preview of a compute exchange; see ROADMAP.md. |
+| **Funds** | What 26 large managers reported holding on SEC Form 13F and what changed since the quarter before, with the limits stated (quarterly, up to 45 days late, no shorts); insider transactions and stakes above 5%. |
+| **Voices** | A reading list of 31 market writers and research desks: latest public pieces by title and link, with one-click adding to My panel. |
 | **Status** | Every news source and market venue with its state, newest story, and the measured delay between a publisher's timestamp and the story appearing here. |
 | **Search** | Ctrl or Cmd + K jumps to a page, a market or a headline. |
 | **Wallet** | Connect Phantom, Solflare, Backpack, MetaMask, Coinbase Wallet and other announcing wallets. Connect only: no signature, no transaction. |

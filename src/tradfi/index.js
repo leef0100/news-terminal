@@ -12,11 +12,13 @@ import { createLiveBackend } from './live.js';
 import { visitor } from './source.js';
 
 // Seconds a shared cache may keep each answer.
-const TTL = { overview: 15, search: 300, quote: 5, candles: 60, company: 300, calendar: 300, ipos: 120, private: 120 };
+const TTL = { overview: 15, search: 300, quote: 5, candles: 60, company: 300, calendar: 300, ipos: 120, private: 120, funds: 20, fund: 300, holders: 60, insiders: 120, 'insiders/latest': 30 };
 
 // What each request counts for against one address's allowance. The routes that can set
-// off new work upstream (a company's filings, a price history) count for more.
-const WEIGHT = { overview: 1, search: 1, quote: 1, candles: 3, company: 3, calendar: 2, ipos: 1, private: 1 };
+// off new work upstream (a company's filings, a price history) count for more. The two
+// Funds blocks on a company page (holders, insiders) count 1 each: holders never fetches, and
+// the filings insiders opens are charged to the address by the SEC source itself.
+const WEIGHT = { overview: 1, search: 1, quote: 1, candles: 3, company: 3, calendar: 2, ipos: 1, private: 1, funds: 1, fund: 3, holders: 1, insiders: 1, 'insiders/latest': 1 };
 
 // One address, as far as limits go. An IPv6 customer usually holds a whole /64, so the
 // first four groups are the address; "::ffff:1.2.3.4" is the IPv4 address inside it.
@@ -138,6 +140,18 @@ export function createTradfi({ demo = false, env = {}, fetchImpl = fetch, now = 
 
   route('ipos', () => [], () => backend.ipos());
   route('private', () => [], () => backend.private());
+
+  // Funds: what large managers (Form 13F) and insiders (Forms 3, 4, 5; Schedules 13D, 13G)
+  // reported to the SEC. A manager is named by its SEC number, and only tracked ones are served.
+  route('funds', () => [], () => backend.funds());
+  route('fund', (q) => {
+    const id = one(q.id).trim();
+    if (!/^\d{1,10}$/.test(id)) throw bad('id must be a manager’s SEC number: 1 to 10 digits');
+    return [id.padStart(10, '0')];
+  }, (id) => backend.fund(id));
+  route('holders', (q) => [symbolOf(q.symbol)], (symbol) => backend.holders(symbol));
+  route('insiders/latest', () => [], () => backend.insidersLatest());
+  route('insiders', (q) => [symbolOf(q.symbol)], (symbol) => backend.insiders(symbol));
 
   router.use((_req, res) => res.status(404).set('cache-control', 'no-store').json({ error: 'Not found' }));
 
