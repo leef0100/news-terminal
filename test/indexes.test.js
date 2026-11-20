@@ -198,7 +198,7 @@ test('with nothing connected every index says why, and none has a value except t
   } finally { await s.close(); tradfi.stop(); }
 });
 
-test('share baskets use exchange closes only, wait for every constituent, and drop what has no price', async () => {
+test('share baskets wait for every constituent, drop what has no price, and say when a member is priced from a perpetual contract', async () => {
   const closes = (k) => ({ interval: '1d', kind: 'stock', source: 'Test feed', delayed: false, candles: [100, 110, 121].map((c, i) => ({ time: Date.UTC(2026, 10, 16 + i) / 1000, close: c * k })), sources: [{ name: 'Test feed', state: 'ok', note: '' }] });
   const config = loadConfig();
   const basket = config.indexes.find((d) => d.id === 'semis');
@@ -222,18 +222,18 @@ test('share baskets use exchange closes only, wait for every constituent, and dr
     assert.equal(r.state, 'pending');
     assert.match(r.note, /2 of 4 companies so far/);
     assert.deepEqual(r.series, []);
-    // Later it turns out only a perpetual is connected for it, and one ticker is unknown: both are left out and named.
+    // Later only a perpetual contract is connected for it: it is used and the index says so. An unknown ticker is left out and named.
     mode = 'perp'; clock += 60000;
     r = (await s.get('/series?id=semis&range=max')).body;
     assert.equal(r.state, 'ok');
-    assert.match(r.note, /Left out for lack of prices: CCC, DDD/);
+    assert.match(r.note, /Left out for lack of prices: DDD/);
+    assert.match(r.note, /perpetual-contract prices on Hyperliquid for 1 of 3 members/);
     assert.deepEqual(r.series.map((p) => [p.t, p.v, p.r]), [['2026-11-16', 100, 100], ['2026-11-17', 110, 110], ['2026-11-18', 121, 121]]);
     assert.equal(r.changePct, 21);
     const by = Object.fromEntries(r.constituents.map((c) => [c.id, c]));
-    assert.equal(by.AAA.contributionPts, 10.5); assert.equal(by.BBB.contributionPts, 10.5); assert.equal(by.AAA.weightPct, 50);
-    assert.equal(by.CCC.state, 'missing'); assert.match(by.CCC.note, /perpetual/); assert.equal(by.CCC.contributionPts, null);
+    assert.equal(by.AAA.contributionPts, 7); assert.equal(by.CCC.contributionPts, 7); assert.equal(by.AAA.weightPct, 33.3);
     assert.match(by.DDD.note, /No listed company has this ticker/);
-    assert.equal(r.inputs[0].source, 'Test feed'); assert.equal(r.inputs[0].asOf, '2026-11-18');
+    assert.match(r.inputs[0].source, /Test feed/); assert.match(r.inputs[0].source, /Hyperliquid perpetual contracts/); assert.match(r.inputs[0].name, /1 from perpetual contracts/); assert.equal(r.inputs[0].asOf, '2026-11-18');
     assert.equal(r.change.d1, 10);
     // A shorter range is rebased to its own start, and contributions follow it.
     const short = (await s.get('/series?id=semis&range=1m')).body;

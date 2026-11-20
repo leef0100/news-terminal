@@ -86,13 +86,14 @@ export function createEngine({ config, providers, now = Date.now, demo = false }
     const res = equalWeighted(usable, { baseDate: def.baseDate, minActive: def.minConstituents });
     if (res.days.length < 2) return stop(def, 'off', 'Not connected: the price history read does not hold two days on which enough companies traded.', { ...frame, members: membersOf(null) });
     const names = [...new Set(read.filter((r) => r.state === 'ok').map((r) => r.source))];
+    const perps = read.filter((r) => r.state === 'ok' && r.perp).length;
     const dropped = def.constituents.filter((_, i) => read[i].state !== 'ok').map((c) => c.symbol);
     return shell(def, {
       ...frame, state: 'ok', points: res.days.map((t, i) => ({ t, v: res.levels[i] })), base: { t: res.baseDate, value: 100 },
-      note: dropped.length ? `Left out for lack of prices: ${dropped.join(', ')}.` : '',
+      note: [perps ? `Built from perpetual-contract prices on Hyperliquid for ${perps === ok ? 'every member' : perps + ' of ' + ok + ' members'}: contracts that track each share and trade round the clock, not the exchange's closing prices.` : '', dropped.length ? `Left out for lack of prices: ${dropped.join(', ')}.` : ''].filter(Boolean).join(' '),
       members: membersOf(res), weightNote: `Equal weight: each of the ${last(res.active)} companies priced on the latest day counts ${round(100 / last(res.active), 1)}%.`, memberWeight: 100 / last(res.active),
       history: res.baseDate === def.baseDate ? `100 on ${def.baseDate}.` : `The base date in the method is ${def.baseDate}, but the price history read starts later, so the index is 100 on ${res.baseDate}.`,
-      inputs: [{ name: `Daily closing prices of ${ok} companies`, source: names.join(', '), url: null, from: res.start, asOf: last(res.days), note: read.some((r) => r.delayed) ? 'Prices may be delayed.' : '' }]
+      inputs: [{ name: perps ? `Daily prices of ${ok} companies (${perps} from perpetual contracts, closing at midnight UTC)` : `Daily closing prices of ${ok} companies`, source: names.join(', '), url: null, from: res.start, asOf: last(res.days), note: read.some((r) => r.delayed) ? 'Prices may be delayed.' : '' }]
     });
   }
 

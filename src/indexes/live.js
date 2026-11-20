@@ -65,8 +65,11 @@ export function createMarketInputs({ tradfi, now = Date.now }) {
     const sources = Array.isArray(r?.sources) ? r.sources : [];
     const rows = Array.isArray(r?.candles) ? r.candles : [];
     if (rows.length && r.kind !== 'stock') {
-      // A perpetual contract trades round the clock at its own price. It is not a close.
-      return { state: 'off', points: [], note: 'Only a perpetual-contract price is connected for these shares, and the index uses exchange closing prices. Set TWELVEDATA_KEY, or connect a licensed feed, for daily closes.', sources: [{ name: 'Share closing prices', state: 'off', note: 'Set TWELVEDATA_KEY, or connect a licensed feed, for daily closing prices.' }] };
+      // No exchange closes are connected, but the share's perpetual contract is. Its daily
+      // close (midnight UTC) is a real traded price, so the index is built from it and says
+      // so plainly: a contract price that tracks the share, not the exchange's own close.
+      const points = rows.map((c) => ({ t: isoDay(c.time * 1000), v: num(c.close) })).filter((p) => p.v > 0);
+      return { state: 'ok', perp: true, points, source: 'Hyperliquid perpetual contracts', delayed: false, note: '', sources };
     }
     if (rows.length) {
       const points = rows.map((c) => ({ t: isoDay(c.time * 1000), v: num(c.close) })).filter((p) => p.v > 0);
