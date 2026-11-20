@@ -1,0 +1,76 @@
+/* Voices: the reading list. Colour comes only from the theme's variables in styles.css. */
+#view-voices :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.breakHead .kicker.vcKick { color: var(--accent); }
+.vcHeadNote { font-size: 13px; text-align: right; max-width: 60ch; min-width: 0; overflow-wrap: anywhere; }
+.vcPad { min-width: 0; }
+.vcLede { max-width: 86ch; font-size: 15px; color: var(--text-2); }
+.vcDemo { padding: 8px 12px; border-radius: 10px; background: var(--warn-bg); border: 1px solid var(--warn-line); color: var(--warn); font-size: 13px; }
+.vcErr { border-style: solid; border-color: var(--down); background: var(--down-bg); color: var(--text); }
+.vcMsg { min-height: 18px; margin: 0; font-size: 12.5px; color: var(--text-2); overflow-wrap: anywhere; }
+.vcMsg:empty { min-height: 0; }
+
+/* suggested panel */
+.vcSug { gap: 12px; }
+.vcSugTop { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; }
+.vcSugTop > div:first-child { flex: 1 1 320px; min-width: 0; }
+.vcSugTop h2, .vcStreamBox h2, .vcDirTitle { margin: 0; }
+.vcSugTop p { margin: 4px 0 0; max-width: 70ch; }
+.vcSugActs { display: flex; flex-wrap: wrap; gap: 8px; }
+.vcSugActs .btn { white-space: normal; text-align: center; }
+.vcSugList { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; }
+.vcSugList .chip { font-family: var(--sans); max-width: 100%; flex-wrap: wrap; }
+.vcSugList .chip b { font-family: var(--mono); font-weight: 500; }
+
+/* filters */
+.vcBar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 20px; }
+.vcChip { min-height: 40px; padding: 4px 16px; font-family: var(--sans); font-size: 13px; cursor: pointer; }
+.vcChip.on { color: var(--accent); font-weight: 600; }
+.vcSearch { flex: 1 1 240px; max-width: 420px; min-width: 0; }
+.vcSearch input { width: 100%; min-height: 44px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line-2); background: var(--panel); color: var(--text); font: inherit; }
+
+/* layout */
+.vcSplit { display: grid; grid-template-columns: minmax(0, 1fr); gap: 28px; align-items: start; }
+@media (min-width: 1100px) { .vcSplit { grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); } }
+.vcStreamBox, .vcDirBox { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+/* latest */
+.vcStream { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.vcItem { padding: 10px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.vcMeta { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: 12.5px; }
+.vcMeta .vcWhen { margin-left: auto; }
+.vcWhen { font-size: 11.5px; color: var(--text-3); white-space: nowrap; }
+.vcTitle { display: block; color: var(--text); font-size: 15px; line-height: 1.35; overflow-wrap: anywhere; }
+a.vcTitle { padding: 9px 0; min-height: 40px; text-decoration: underline; text-decoration-color: var(--line-3); text-underline-offset: 3px; }
+a.vcTitle:hover { color: var(--accent); text-decoration-color: var(--accent); }
+span.vcTitle { padding: 6px 0; }
+.vcTitle.small { font-size: 13.5px; }
+.vcExcerpt { margin: 0; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.vcMore { align-self: flex-start; }
+
+/* directory */
+.vcDir { display: flex; flex-direction: column; gap: 26px; }
+.vcGroup { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.vcGroupHead { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.vcGroupHead h3 { margin: 0; font-size: 16px; }
+.vcGrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 270px), 1fr)); gap: 12px; }
+.vcCard { gap: 8px; padding: 16px; min-width: 0; }
+.vcCardHead { min-width: 0; }
+.vcName { margin: 0; font-size: 16px; font-weight: 600; overflow-wrap: anywhere; }
+.vcPub { margin: 2px 0 0; font-size: 13px; color: var(--text-2); overflow-wrap: anywhere; }
+.vcCovers { margin: 0; font-size: 13px; }
+.vcCardItems { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--line); }
+.vcCardItems li { display: flex; flex-direction: column; padding: 2px 0 8px; border-bottom: 1px solid var(--line); min-width: 0; }
+.vcState { margin: 0; }
+.vcState.bad { color: var(--down); }
+.vcFoot { display: flex; flex-wrap: wrap; gap: 0 18px; margin-top: auto; }
+.vcFoot .link, .vcFoot .vcX { display: inline-flex; align-items: center; min-height: 40px; font-size: 13px; overflow-wrap: anywhere; }
+.vcAdd, .vcAddAll { min-height: 40px; }
+.vcAdd { align-self: flex-start; }
+.vcAdd.on { border-color: var(--accent); background: var(--accent-bg); color: var(--accent); }
+
+@media (max-width: 620px) {
+  .vcHeadNote { text-align: left; }
+  .vcSugActs, .vcSugActs .btn { width: 100%; }
+  .vcSearch { max-width: none; flex-basis: 100%; }
+  .vcMeta .vcWhen { margin-left: 0; }
+}

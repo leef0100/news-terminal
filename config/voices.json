@@ -1,0 +1,356 @@
+{
+  "note": "The Voices reading list. The server fetches only the feed addresses in this file. Every entry is a person or publication that publishes market commentary publicly under this name; nothing personal belongs here. See docs/VOICES-SOURCES.md for how each entry was checked.",
+  "pollMinutes": 15,
+  "groups": [
+    {
+      "id": "macro",
+      "name": "Macro"
+    },
+    {
+      "id": "equities-ai",
+      "name": "Equities and AI infrastructure"
+    },
+    {
+      "id": "crypto",
+      "name": "Crypto"
+    },
+    {
+      "id": "desks",
+      "name": "Research desks and newsletters"
+    }
+  ],
+  "suggested": [
+    "lyn-alden",
+    "semianalysis",
+    "stratechery",
+    "the-diff",
+    "ed-zitron",
+    "bankless",
+    "galaxy-research",
+    "liberty-street"
+  ],
+  "voices": [
+    {
+      "id": "citrini",
+      "name": "Citrini",
+      "publication": "Citrini Research",
+      "group": "macro",
+      "covers": "Thematic equity baskets and macro themes",
+      "feed": "https://www.citriniresearch.com/feed",
+      "site": "https://www.citriniresearch.com/",
+      "verified": "Feed fetched live 2026-11-19: channel \"Citrini Research\", newest item dated 4 Nov 2026, items carry a public <description>. Byline \"Citrini\" read on the publication's own pages. X handle NOT verified: the widely cited account is not linked from the home, about or support pages or the feed, so no handle is listed."
+    },
+    {
+      "id": "lyn-alden",
+      "name": "Lyn Alden",
+      "publication": "Lyn Alden Investment Strategy",
+      "group": "macro",
+      "covers": "Macro, monetary systems, energy and bitcoin",
+      "x": "LynAldenContact",
+      "feed": "https://www.lynalden.com/feed/",
+      "site": "https://www.lynalden.com/",
+      "verified": "Home page fetched 2026-11-19: links twitter.com/LynAldenContact. Feed address and recent items (newest 15 Jul 2026) seen only through a third-party reader listing (feeder.co); not fetched live."
+    },
+    {
+      "id": "noahpinion",
+      "name": "Noah Smith",
+      "publication": "Noahpinion",
+      "group": "macro",
+      "covers": "Economics, industrial policy and technology",
+      "feed": "https://www.noahpinion.blog/feed",
+      "site": "https://www.noahpinion.blog/",
+      "verified": "Publication page noahpinion.blog/about fetched 2026-11-19: names the publication and author and is hosted on Substack. Feed address is Substack's standard /feed on the same host; the feed itself could not be opened from the build tool (not fetched live). X handle not shown on the publication's own pages, so none is listed."
+    },
+    {
+      "id": "chartbook",
+      "name": "Adam Tooze",
+      "publication": "Chartbook",
+      "group": "macro",
+      "covers": "Global economy, finance and economic history",
+      "feed": "https://adamtooze.substack.com/feed",
+      "site": "https://adamtooze.substack.com/",
+      "verified": "Publication page adamtooze.substack.com/about fetched 2026-11-19: names the publication and author and is hosted on Substack. Feed address is Substack's standard /feed on the same host; the feed itself could not be opened from the build tool (not fetched live). X handle not shown on the publication's own pages, so none is listed."
+    },
+    {
+      "id": "apricitas",
+      "name": "Joseph Politano",
+      "publication": "Apricitas Economics",
+      "group": "macro",
+      "covers": "US economic data, trade and labour markets",
+      "feed": "https://www.apricitas.io/feed",
+      "site": "https://www.apricitas.io/",
+      "verified": "Publication page apricitas.io/about fetched 2026-11-19: names the publication and author and is hosted on Substack. Feed address is Substack's standard /feed on the same host; the feed itself could not be opened from the build tool (not fetched live). X handle not shown on the publication's own pages, so none is listed."
+    },
+    {
+      "id": "robin-brooks",
+      "name": "Robin J Brooks",
+      "publication": "Robin J Brooks",
+      "group": "macro",
+      "covers": "Currencies, capital flows and global macro",
+      "feed": "https://robinjbrooks.substack.com/feed",
+      "site": "https://robinjbrooks.substack.com/",
+      "verified": "Publication page robinjbrooks.substack.com/about fetched 2026-11-19: names the publication and author and is hosted on Substack. Feed address is Substack's standard /feed on the same host; the feed itself could not be opened from the build tool (not fetched live). X handle not shown on the publication's own pages, so none is listed."
+    },
+    {
+      "id": "kyla",
+      "name": "Kyla Scanlon",
+      "publication": "Kyla's Newsletter",
+      "group": "macro",
+      "covers": "The economy and markets explained for a general reader",
+      "feed": "https://kyla.substack.com/feed",
+      "site": "https://kyla.substack.com/",
+      "verified": "Publication page kyla.substack.com/p/other-links fetched 2026-11-19: names the publication and author and is hosted on Substack. Feed address is Substack's standard /feed on the same host; the feed itself could not be opened from the build tool (not fetched live). X handle not shown on the publication's own pages, so none is listed."
+    },
+    {
+      "id": "calculated-risk",
+      "name": "Calculated Risk",
+      "publication": "Calculated Risk",
+      "group": "macro",
+      "covers": "US housing and economic data releases",
+      "feed": "https://feeds.feedburner.com/CalculatedRisk",
+      "site": "https://www.calculatedriskblog.com/",
+      "excerpt": false,
+      "verified": "Blog page fetched 2026-11-19: bylined \"Calculated Risk\" and gives feeds.feedburner.com/CalculatedRisk as its feed. The same address seen in a third-party reader (rss-parrot.net) whose copy was old (May 2025); not fetched live. The blog asks that excerpts not be reposted, so excerpts are switched off for this entry. No X account is linked from the blog."
+    },
+    {
+      "id": "doomberg",
+      "name": "Doomberg",
+      "publication": "Doomberg",
+      "group": "macro",
+      "covers": "Energy, commodities and industry",
+      "feed": "https://newsletter.doomberg.com/feed",
+      "site": "https://newsletter.doomberg.com/",
+      "verified": "Publication page newsletter.doomberg.com/about fetched 2026-11-19: names the publication and author and is hosted on Substack. Feed address is Substack's standard /feed on the same host; the feed itself could not be opened from the build tool (not fetched live). X handle not shown on the publication's own pages, so none is listed."
+    },
+    {
+      "id": "stratechery",
+      "name": "Ben Thompson",
+      "publication": "Stratechery",
+      "group": "equities-ai",
+      "covers": "Strategy and business models of technology companies",
+      "x": "benthompson",
+      "feed": "https://stratechery.com/feed/",
+      "site": "https://stratechery.com/",
+      "verified": "Site page fetched 2026-11-19: header links twitter.com/benthompson. Feed address seen only as a third-party reader listing (inoreader.com, titled \"stratechery by Ben Thompson\"); recency not confirmed; not fetched live."
+    },
+    {
+      "id": "semianalysis",
+      "name": "Dylan Patel",
+      "publication": "SemiAnalysis",
+      "group": "equities-ai",
+      "covers": "Semiconductors, data centers and AI compute supply",
+      "x": "dylan522p",
+      "feed": "https://newsletter.semianalysis.com/feed",
+      "site": "https://semianalysis.com/",
+      "verified": "semianalysis.com/dylan-patel/ fetched 2026-11-19: links x.com/dylan522p (author) and x.com/SemiAnalysis_ (firm). newsletter.semianalysis.com/about fetched 2026-11-19: Substack-hosted, author Dylan Patel. Feed address is Substack's standard /feed; not fetched live."
+    },
+    {
+      "id": "benedict-evans",
+      "name": "Benedict Evans",
+      "publication": "Benedict Evans",
+      "group": "equities-ai",
+      "covers": "Technology industry trends and AI adoption",
+      "x": "benedictevans",
+      "site": "https://www.ben-evans.com/",
+      "verified": "ben-evans.com/newsletter fetched 2026-11-19: header links twitter.com/benedictevans. No feed address could be confirmed, so none is listed."
+    },
+    {
+      "id": "the-diff",
+      "name": "Byrne Hobart",
+      "publication": "The Diff",
+      "group": "equities-ai",
+      "covers": "Inflections in finance and technology",
+      "x": "ByrneHobart",
+      "feed": "https://www.thediff.co/rss/",
+      "site": "https://www.thediff.co/",
+      "verified": "thediff.co/about fetched 2026-11-19: author bio links twitter.com/ByrneHobart; the site runs on Ghost 6. Feed address is Ghost's standard /rss/; not fetched live."
+    },
+    {
+      "id": "damodaran",
+      "name": "Aswath Damodaran",
+      "publication": "Musings on Markets",
+      "group": "equities-ai",
+      "covers": "Company valuation and corporate finance",
+      "feed": "https://aswathdamodaran.blogspot.com/feeds/posts/default",
+      "site": "https://aswathdamodaran.blogspot.com/",
+      "verified": "Blog fetched 2026-11-19: \"Musings on Markets\" by Aswath Damodaran, newest post 18 Nov 2026. Feed address and the same recent posts seen through a third-party reader listing (feeder.co, which shows the http form of this address); not fetched live. No X account is linked from the blog."
+    },
+    {
+      "id": "ed-zitron",
+      "name": "Ed Zitron",
+      "publication": "Where's Your Ed At",
+      "group": "equities-ai",
+      "covers": "The economics of the AI build-out and the technology industry",
+      "x": "edzitron",
+      "feed": "https://www.wheresyoured.at/rss/",
+      "site": "https://www.wheresyoured.at/",
+      "verified": "wheresyoured.at/about fetched 2026-11-19: footer links x.com/edzitron and the page gives www.wheresyoured.at/rss as its feed (listed here with Ghost's trailing slash). A third-party reader (rss-parrot.net) held only an old copy (Aug 2024); not fetched live."
+    },
+    {
+      "id": "tunguz",
+      "name": "Tomasz Tunguz",
+      "publication": "Tomasz Tunguz",
+      "group": "equities-ai",
+      "covers": "Software and AI company metrics and venture markets",
+      "x": "ttunguz",
+      "site": "https://tomtunguz.com/",
+      "verified": "tomtunguz.com/about/ fetched 2026-11-19: links x.com/ttunguz. No feed address could be confirmed, so none is listed."
+    },
+    {
+      "id": "cassandra-unchained",
+      "name": "Michael Burry",
+      "publication": "Cassandra Unchained",
+      "group": "equities-ai",
+      "covers": "Equity markets, valuation and market history",
+      "feed": "https://michaeljburry.substack.com/feed",
+      "site": "https://michaeljburry.substack.com/",
+      "verified": "A post page on michaeljburry.substack.com fetched 2026-11-19 (dated 11 May 2026): publication \"Cassandra Unchained\", bylined Michael Burry, hosted on Substack. Feed address is Substack's standard /feed; not fetched live. No X handle is shown on the publication's pages, so none is listed."
+    },
+    {
+      "id": "arthur-hayes",
+      "name": "Arthur Hayes",
+      "publication": "Crypto Trader Digest",
+      "group": "crypto",
+      "covers": "Crypto markets and global liquidity",
+      "feed": "https://cryptohayes.substack.com/feed",
+      "site": "https://cryptohayes.substack.com/",
+      "verified": "Publication page cryptohayes.substack.com/about fetched 2026-11-19: names the publication and author and is hosted on Substack. Feed address is Substack's standard /feed on the same host; the feed itself could not be opened from the build tool (not fetched live). X handle not shown on the publication's own pages, so none is listed."
+    },
+    {
+      "id": "coin-metrics",
+      "name": "Coin Metrics",
+      "publication": "State of the Network",
+      "group": "crypto",
+      "covers": "On-chain data and crypto market structure",
+      "feed": "https://coinmetrics.substack.com/feed",
+      "site": "https://coinmetrics.substack.com/",
+      "verified": "coinmetrics.substack.com/about fetched 2026-11-19: \"Coin Metrics' State of the Network\", a weekly newsletter on a substack.com address. Feed address is Substack's standard /feed; not fetched live. No X handle shown on the page."
+    },
+    {
+      "id": "bankless",
+      "name": "Bankless",
+      "publication": "Bankless",
+      "group": "crypto",
+      "covers": "Ethereum, DeFi and crypto markets",
+      "x": "BanklessHQ",
+      "feed": "https://www.bankless.com/rss/feed",
+      "site": "https://www.bankless.com/",
+      "verified": "bankless.com/author/ryan fetched 2026-11-19: footer links x.com/BanklessHQ and the page gives www.bankless.com/rss/feed as the site-wide feed. Feed not fetched live."
+    },
+    {
+      "id": "unchained",
+      "name": "Unchained",
+      "publication": "Unchained",
+      "group": "crypto",
+      "covers": "Crypto news, interviews and market commentary",
+      "x": "Unchained_pod",
+      "feed": "https://unchainedcrypto.com/feed/",
+      "site": "https://unchainedcrypto.com/",
+      "verified": "unchainedcrypto.com/about/ fetched 2026-11-19: header and footer link x.com/Unchained_pod; founder Laura Shin. Feed address is the WordPress standard /feed/ (the site uses WordPress-style addresses); not seen on the site and not fetched live."
+    },
+    {
+      "id": "glassnode",
+      "name": "Glassnode",
+      "publication": "Glassnode Research",
+      "group": "crypto",
+      "covers": "On-chain analysis of bitcoin and digital-asset markets",
+      "feed": "https://research.glassnode.com/rss/",
+      "site": "https://research.glassnode.com/",
+      "verified": "research.glassnode.com fetched 2026-11-19 (insights.glassnode.com now redirects there): \"Glassnode Research\", runs on Ghost 6. Feed address is Ghost's standard /rss/; not fetched live. No X link on the page, so none is listed."
+    },
+    {
+      "id": "decentralised",
+      "name": "Joel John and team",
+      "publication": "Decentralised.co",
+      "group": "crypto",
+      "covers": "Long-form research on crypto businesses and markets",
+      "x": "joel_john95",
+      "feed": "https://www.decentralised.co/feed",
+      "site": "https://www.decentralised.co/",
+      "verified": "decentralised.co/about fetched 2026-11-19: Substack-hosted; lists Joel John with twitter.com/joel_john95. Feed address is Substack's standard /feed; not fetched live."
+    },
+    {
+      "id": "galaxy-research",
+      "name": "Galaxy Research",
+      "publication": "Galaxy",
+      "group": "crypto",
+      "covers": "Institutional research on digital assets",
+      "x": "galaxyhq",
+      "site": "https://www.galaxy.com/insights/research/",
+      "verified": "galaxy.com/subscribe-to-research fetched 2026-11-19: the page's own metadata names @galaxyhq as the site's account. No feed found, so none is listed. The site address is the research section as it appears in the site's own article addresses."
+    },
+    {
+      "id": "liberty-street",
+      "name": "Liberty Street Economics",
+      "publication": "Federal Reserve Bank of New York",
+      "group": "desks",
+      "covers": "Research notes by New York Fed economists",
+      "x": "libertystecon",
+      "feed": "https://libertystreeteconomics.newyorkfed.org/feed/",
+      "site": "https://libertystreeteconomics.newyorkfed.org/",
+      "verified": "Blog page fetched 2026-11-19: links x.com/libertystecon and labels libertystreeteconomics.newyorkfed.org/feed/ as its RSS feed. Feed not fetched live."
+    },
+    {
+      "id": "feds-notes",
+      "name": "FEDS Notes",
+      "publication": "Federal Reserve Board",
+      "group": "desks",
+      "covers": "Short research notes by Federal Reserve Board staff",
+      "x": "federalreserve",
+      "feed": "https://www.federalreserve.gov/feeds/feeds_notes.xml",
+      "site": "https://www.federalreserve.gov/econres/notes/feds-notes/default.htm",
+      "verified": "federalreserve.gov/feeds fetched 2026-11-19: lists www.federalreserve.gov/feeds/feeds_notes.xml for FEDS Notes and links x.com/federalreserve. Feed not fetched live. The site address (the notes index) is from memory and was not opened."
+    },
+    {
+      "id": "a-wealth-of-common-sense",
+      "name": "Ben Carlson",
+      "publication": "A Wealth of Common Sense",
+      "group": "desks",
+      "covers": "Markets, portfolios and investor behaviour",
+      "x": "awealthofcs",
+      "feed": "https://awealthofcommonsense.com/feed/",
+      "site": "https://awealthofcommonsense.com/",
+      "verified": "awealthofcommonsense.com/contact/ fetched 2026-11-19: links twitter.com/awealthofcs. Feed address is the WordPress standard /feed/ (the site uses WordPress-style addresses); not seen on the site and not fetched live."
+    },
+    {
+      "id": "tker",
+      "name": "Sam Ro",
+      "publication": "TKer",
+      "group": "desks",
+      "covers": "Stock market and economic data in context",
+      "feed": "https://www.tker.co/feed",
+      "site": "https://www.tker.co/",
+      "verified": "tker.co/about fetched 2026-11-19: \"TKer by Sam Ro\", Substack-hosted. Feed address is Substack's standard /feed; not fetched live. The page links one post from an X account in his name but does not state his handle, so none is listed."
+    },
+    {
+      "id": "bits-about-money",
+      "name": "Patrick McKenzie",
+      "publication": "Bits about Money",
+      "group": "desks",
+      "covers": "Payments, banking and financial infrastructure",
+      "x": "patio11",
+      "site": "https://www.bitsaboutmoney.com/",
+      "verified": "bitsaboutmoney.com/patio11 fetched 2026-11-19: links twitter.com/patio11. No feed address could be confirmed, so none is listed."
+    },
+    {
+      "id": "abnormal-returns",
+      "name": "Tadas Viskanta",
+      "publication": "Abnormal Returns",
+      "group": "desks",
+      "covers": "Daily links to investing and markets writing",
+      "feed": "https://abnormalreturns.com/feed/",
+      "site": "https://abnormalreturns.com/",
+      "verified": "abnormalreturns.com fetched 2026-11-19: \"Abnormal Returns\" by Tadas Viskanta. Feed address is the WordPress standard /feed/ (the site uses WordPress-style addresses); not seen on the site and not fetched live. No X link found on the page."
+    },
+    {
+      "id": "the-big-picture",
+      "name": "Barry Ritholtz",
+      "publication": "The Big Picture",
+      "group": "desks",
+      "covers": "Markets, investing and the economy",
+      "feed": "https://ritholtz.com/feed/",
+      "site": "https://ritholtz.com/",
+      "verified": "ritholtz.com/about/ fetched 2026-11-19: \"The Big Picture\". Feed address is the WordPress standard /feed/ (the site uses WordPress-style addresses); not seen on the site and not fetched live. No X link found on the page."
+    }
+  ]
+}
